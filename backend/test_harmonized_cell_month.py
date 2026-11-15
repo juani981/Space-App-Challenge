@@ -1,0 +1,167 @@
+import unittest
+from datetime import date
+
+from harmonized_cell_month import (
+    BASELINE_EXCLUDE_MASK,
+    PENDING_TEAM_CONFIRMATION,
+    QualityFlagBits,
+    HarmonizedCellMonthRow,
+    aggregate_rows_by_month,
+    bbox_to_cell_id_ranges,
+    bit_or_flags,
+    compute_aoi_grid_area_km2,
+    compute_cell_month_calendar_anomalies,
+    decode_quality_flags,
+    spherical_cell_area_km2,
+)
+
+
+def _make_row(
+    year: int,
+    month_num: int,
+    cell_id: int,
+    n_eq: float,
+    f_eq: float,
+    quality_flag: int = 0,
+    n_terra: int = 0,
+    method_version: str = "v0.1-provisional",
+) -> HarmonizedCellMonthRow:
+    return HarmonizedCellMonthRow(
+        month=date(year, month_num, 1),
+        cell_id=cell_id,
+        lat_center=-31.375,
+        lon_center=-64.125,
+        cell_area_km2=658.4,
+        n_eq=n_eq,
+        f_eq=f_eq,
+        ref_sat="N20",
+        sensors="N20",
+        n_terra=n_terra,
+        n_aqua=int(n_eq),
+        n_n20=int(n_eq * 3),
+        frp_terra=round(n_terra * 18.0, 1),
+        quality_flag=quality_flag,
+        method_version=method_version,
+    )
+
+
+class TestHarmonizedCellMonthEngine(unittest.TestCase):
+    def test_spherical_cell_area_matches_doc_benchmarks(self):
+        """Section 3 benchmark: ~773 km2 at equator and ~387 km2 near 60 degrees."""
+        eq_area = spherical_cell_area_km2(0.0, 0.25)
+        lat60_area = spherical_cell_area_km2(59.75, 60.0)
+        self.assertAlmostEqual(eq_area, 773.0, delta=1.5)
+        self.assertAlmostEqual(lat60_area, 387.0, delta=3.0)
+
+    def test_bbox_to_cell_id_ranges_and_antimeridian_split(self):
+        """Contiguous BETWEEN range per latitude row, splitting into 2 per row across +-180."""
+        # 2 latitude rows (-0.5 to 0.0 -> 2 bands), 2 longitude columns (-0.5 to 0.0 -> 2 cols)
+        ranges_std = bbox_to_cell_id_ranges(-0.5, -0.5, 0.0, 0.0)
+        self.assertEqual(len(ranges_std), 2)
+        for a, b in ranges_std:
+            self.assertEqual(b - a, 1)  # 2 columns -> [a, a+1]
+
+        # Crossing antimeridian (min_lon = 179.5 > max_lon = -179.5) across 1 latitude row
+        ranges_anti = bbox_to_cell_id_ranges(179.5, 0.0, -179.5, 0.25)
+        self.assertEqual(len(ranges_anti), 2)
+        # First chunk covers left side [0..col] and second chunk covers right edge [col..1439]
+        self.assertEqual(ranges_anti[0][1] - ranges_anti[0][0], 1)
+        self.assertEqual(ranges_anti[1][1] - ranges_anti[1][0], 1)
+
+    def test_sparse_aoi_density_uses_full_grid_area(self):
+        """Density divides SUM(f_eq) by FULL AOI grid area, not only returned active rows."""
+        full_area = compute_aoi_grid_area_km2(-65.0, -32.0, -64.0, -31.0)
+        self.assertGreater(full_area, 9000.0)  # 4x4 grid of 0.25° cells near -31.5°
+
+        # Suppose only ONE cell out of 16 had fire activity
+        rows = [_make_row(2024, 9, cell_id=50000, n_eq=10.0, f_eq=full_area * 0.5)]
+        agg = aggregate_rows_by_month(rows, area_region_km2=full_area)
+        self.assertEqual(len(agg), 1)
+        self.assertAlmostEqual(agg[0].frp_density_mw_km2, 0.5, places=4)
+        self.assertEqual(agg[0].active_cell_count, 1)
+
+    def test_quality_flag_bit_or_and_decode(self):
+        combined = bit_or_flags([
+            QualityFlagBits.GAPS,
+            QualityFlagBits.FALLBACK | QualityFlagBits.PROVISIONAL_CALIBRATION,
+        ])
+        codes = {item["code"] for item in decode_quality_flags(combined)}
+        self.assertEqual(codes, {"gaps", "fallback", "provisional_calibration"})
+
+    def test_anomaly_percentile_record_zrobust_and_ten_year_guard(self):
+        """
+        Verifies Section 4 rules:
+        - Exclude GAPS/MODIS_ONLY/LAST_MONTH/PARTIAL_MONTH from baseline
+        - Refuse anomaly calculation when baseline < 10 valid years
+        - Compute exact mid-rank percentile, record flag, and log1p-MAD z-score
+        """
+        area = 10000.0
+        rows: list[HarmonizedCellMonthRow] = []
+
+        # 11 clean baseline years (2013..2023) for September with known n_eq values
+        clean_values = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0, 110.0]
+        for idx, val in enumerate(clean_values):
+            rows.append(_make_row(2013 + idx, 9, cell_id=100, n_eq=val, f_eq=val * 10.0))
+
+        # 2024 September: extreme series record (250.0)
+        rows.append(_make_row(2024, 9, cell_id=100, n_eq=250.0, f_eq=2500.0))
+        # 2025 September: GAPS flag (must stay in output, but excluded from others' baseline)
+        rows.append(
+            _make_row(2025, 9, cell_id=100, n_eq=999.0, f_eq=9990.0, quality_flag=int(QualityFlagBits.GAPS))
+        )
+
+        # Also add January with only 5 years (< 10) -> must mark unavailable
+        for y in range(2020, 2025):
+            rows.append(_make_row(y, 1, cell_id=100, n_eq=15.0, f_eq=150.0))
+
+        monthly = aggregate_rows_by_month(rows, area_region_km2=area)
+        anomalies = compute_cell_month_calendar_anomalies(monthly, metric="n_eq")
+        by_ym = {(a.year, a.month_num): a for a in anomalies}
+
+        # January: < 10 baseline years -> unavailable
+        jan_2024 = by_ym[(2024, 1)]
+        self.assertFalse(jan_2024.anomaly_available)
+        self.assertEqual(jan_2024.severity_class, "unavailable")
+
+        # September 2024: baseline has 11 valid years (2013..2023; 2025 excluded due to GAPS)
+        sep_2024 = by_ym[(2024, 9)]
+        self.assertTrue(sep_2024.anomaly_available)
+        self.assertEqual(sep_2024.baseline_years_count, 11)
+        self.assertEqual(sep_2024.percentile, 1.0)
+        self.assertEqual(sep_2024.severity_class, "gt_90")
+        self.assertTrue(sep_2024.is_series_record)
+        self.assertIsNotNone(sep_2024.z_robust_log1p)
+        self.assertGreater(sep_2024.z_robust_log1p, 1.5)
+
+        # September 2025 (GAPS): still rendered in calendar output, flagged as excluded from baseline
+        sep_2025 = by_ym[(2025, 9)]
+        self.assertTrue(sep_2025.excluded_from_baseline)
+        self.assertTrue(sep_2025.anomaly_available)
+        self.assertEqual(sep_2025.baseline_years_count, 12)  # 2013..2024 are all unflagged!
+
+    def test_mad_zero_fallback_and_version_mixing_guard(self):
+        """When MAD == 0, returns ratio to median instead of crashing; rejects mixed method_version."""
+        area = 5000.0
+        rows = [_make_row(2012 + i, 5, cell_id=200, n_eq=10.0, f_eq=100.0) for i in range(11)]
+        rows.append(_make_row(2023, 5, cell_id=200, n_eq=30.0, f_eq=300.0))
+
+        monthly = aggregate_rows_by_month(rows, area_region_km2=area)
+        anomalies = compute_cell_month_calendar_anomalies(monthly, metric="n_eq")
+        y2023 = [a for a in anomalies if a.year == 2023][0]
+        self.assertIsNone(y2023.z_robust_log1p)
+        self.assertAlmostEqual(y2023.ratio_to_median, 3.0)
+
+        # Mixing method_version must raise ValueError
+        mixed = [
+            _make_row(2023, 6, cell_id=200, n_eq=10.0, f_eq=100.0, method_version="v0.1-provisional"),
+            _make_row(2023, 7, cell_id=200, n_eq=10.0, f_eq=100.0, method_version="v1.0-final"),
+        ]
+        with self.assertRaises(ValueError):
+            aggregate_rows_by_month(mixed, area_region_km2=area)
+
+        # Pending confirmation map exists cleanly
+        self.assertFalse(PENDING_TEAM_CONFIRMATION["quality_flag_bitmask_confirmed"])
+
+
+if __name__ == "__main__":
+    unittest.main()
