@@ -7,6 +7,7 @@ import {
 } from '../config/sidePanelConfig';
 import { VisualizationModuleRenderer } from './visualizations/VisualizationLibrary';
 import type { SidePanelVisualizationContext } from './visualizations/contracts';
+import { LanguageToggle, resolveText, useLanguage } from '../i18n/LanguageContext';
 
 export interface HotspotSidePanelProps {
   status: string;
@@ -39,6 +40,7 @@ export function HotspotSidePanel({
   onRefresh,
   isLoading = false,
 }: HotspotSidePanelProps) {
+  const { lang, t } = useLanguage();
   const [isAnalysisOpen, setIsAnalysisOpen] = useState<boolean>(true);
   const activeYear = parseInt(startDate.slice(0, 4), 10) || 2024;
 
@@ -48,6 +50,7 @@ export function HotspotSidePanel({
     calendarCells,
     calibrationMode,
     activeYear,
+    lang,
   };
 
   return (
@@ -62,13 +65,16 @@ export function HotspotSidePanel({
         gap: '16px',
       }}
     >
-      {/* HEADER & STATUS */}
+      {/* HEADER & TOP-RIGHT BILINGUAL TOGGLE (ES | EN) */}
       <div>
-        <h3 style={{ margin: '0 0 4px 0', color: '#0f172a', fontSize: '16px' }}>
-          Armonización MODIS & VIIRS — Panel Modular
-        </h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+          <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>
+            {t.panelMainTitle}
+          </h3>
+          <LanguageToggle />
+        </div>
         <div style={{ fontSize: '12px', color: '#475569' }}>
-          <strong>Estado:</strong> {status} ({totalHotspots} focos armonizados en el AOI)
+          <strong>{t.panelStatusLabel}</strong> {status} ({totalHotspots} {t.hotspotsInAoiSuffix})
         </div>
       </div>
 
@@ -96,7 +102,7 @@ export function HotspotSidePanel({
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
           <strong style={{ fontSize: '13px', color: '#1e293b' }}>
-            Atributos Canónicos del Foco (10 Conceptos)
+            {t.sectionCanonicalTitle}
           </strong>
           {selectedHotspot && (
             <span
@@ -126,7 +132,7 @@ export function HotspotSidePanel({
               border: '1px dashed #cbd5e1',
             }}
           >
-            Haz clic sobre cualquier <strong>foco en el mapa</strong> para inspeccionar sus atributos canónicos y calibración.
+            {t.emptyHotspotPrompt}
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
@@ -141,7 +147,9 @@ export function HotspotSidePanel({
                   border: '1px solid #f1f5f9',
                 }}
               >
-                <div style={{ fontSize: '10px', color: '#64748b' }}>{attr.label}</div>
+                <div style={{ fontSize: '10px', color: '#64748b' }}>
+                  {resolveText(attr.label, lang)}
+                </div>
                 <strong
                   style={{
                     color: attr.highlight ? '#dc2626' : '#0f172a',
@@ -151,7 +159,7 @@ export function HotspotSidePanel({
                         : 'inherit',
                   }}
                 >
-                  {attr.format(selectedHotspot)}
+                  {attr.format(selectedHotspot, lang)}
                 </strong>
               </div>
             ))}
@@ -185,10 +193,10 @@ export function HotspotSidePanel({
         >
           <div>
             <strong style={{ fontSize: '13px', color: '#0f172a', display: 'block' }}>
-              Módulos de Visualización y Datos Procesados
+              {t.sectionVisualizationsTitle}
             </strong>
             <span style={{ fontSize: '11px', color: '#64748b' }}>
-              Configurables por código en <code>src/config/sidePanelConfig.ts</code>
+              {t.sectionVisualizationsSubtitle}
             </span>
           </div>
           <span style={{ fontSize: '14px', color: '#475569', fontWeight: 700 }}>

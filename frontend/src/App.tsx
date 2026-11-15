@@ -8,8 +8,11 @@ import {
   type CalibrationMode,
   type UnifiedHotspot,
 } from './services/apiClient';
+import { LanguageProvider, useLanguage } from './i18n/LanguageContext';
 
-export default function App() {
+function AppContent() {
+  const { t } = useLanguage();
+
   const [bounds, setBounds] = useState<AoiBounds>({
     minLon: -65.0,
     minLat: -35.0,
@@ -24,7 +27,7 @@ export default function App() {
 
   const [backendData, setBackendData] = useState<AoiResponse | null>(null);
   const [selectedHotspot, setSelectedHotspot] = useState<UnifiedHotspot | null>(null);
-  const [status, setStatus] = useState<string>('Inactivo — Pulsa "Consultar AOI" o ajusta el mapa');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const executeQuery = useCallback(
@@ -35,7 +38,7 @@ export default function App() {
       calMode = calibrationMode,
     ) => {
       setIsLoading(true);
-      setStatus('Consultando API y aplicando armonización científica...');
+      setErrorMsg(null);
       try {
         const res = await fetchAoi(targetBounds, {
           startDate: start,
@@ -44,11 +47,8 @@ export default function App() {
         });
         setBackendData(res);
         setSelectedHotspot(res.hotspots[0] ?? null);
-        setStatus(
-          `Conectado — Modo: ${res.calibration_mode} | Fuente: ${res.data_source.toUpperCase()}`
-        );
       } catch (err) {
-        setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
+        setErrorMsg(err instanceof Error ? err.message : String(err));
       } finally {
         setIsLoading(false);
       }
@@ -71,6 +71,14 @@ export default function App() {
     executeQuery(bounds, startDate, endDate, newMode);
   };
 
+  const localizedStatus = isLoading
+    ? t.statusQuerying
+    : errorMsg
+    ? `Error: ${errorMsg}`
+    : backendData
+    ? `${t.statusConnectedPrefix} — ${t.statusModeLabel}: ${t.calModeShort[backendData.calibration_mode as CalibrationMode] ?? backendData.calibration_mode} | ${t.statusSourceLabel}: ${backendData.data_source.toUpperCase()}`
+    : t.statusIdle;
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1.9fr 1.1fr', height: '100vh', width: '100vw', overflow: 'hidden' }}>
       {/* LEFT BLOCK: Centered-Box Map + Live Coordinate & Mode Bar */}
@@ -87,7 +95,7 @@ export default function App() {
             zIndex: 10,
           }}
         >
-          <strong style={{ fontSize: '13px' }}>AOI Centrada:</strong>
+          <strong style={{ fontSize: '13px' }}>{t.aoiCenteredLabel}</strong>
           <span
             style={{
               fontSize: '11px',
@@ -114,11 +122,11 @@ export default function App() {
               fontSize: '12px',
             }}
           >
-            {isLoading ? 'Cargando...' : 'Consultar AOI'}
+            {isLoading ? t.loadingBtn : t.queryAoiBtn}
           </button>
 
           <span style={{ fontSize: '11px', opacity: 0.85 }}>
-            Calibración: <strong>{calibrationMode}</strong> | Vista mapa: <strong>{mapRenderMode}</strong>
+            {t.calibrationLabel} <strong>{t.calModeShort[calibrationMode]}</strong> | {t.mapViewLabel} <strong>{t.mapModeShort[mapRenderMode]}</strong>
           </span>
         </div>
 
@@ -137,7 +145,7 @@ export default function App() {
       {/* RIGHT BLOCK: Point Inspector + Interactive Activity Calendar + Pluggable Visualization Modules */}
       <div style={{ height: '100%', overflowY: 'auto', minWidth: 0 }}>
         <HotspotSidePanel
-          status={status}
+          status={localizedStatus}
           totalHotspots={backendData?.hotspots.length ?? 0}
           hotspots={backendData?.hotspots ?? []}
           selectedHotspot={selectedHotspot}
@@ -153,5 +161,13 @@ export default function App() {
         />
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <LanguageProvider>
+      <AppContent />
+    </LanguageProvider>
   );
 }

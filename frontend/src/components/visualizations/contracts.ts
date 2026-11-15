@@ -1,9 +1,10 @@
 import type { CalibrationMode, MonthlyCalendarCell, UnifiedHotspot } from '../../services/apiClient';
+import type { Language, LocalizedText } from '../../i18n/LanguageContext';
 
 /**
  * Context passed automatically to every visualization module's `resolveData(ctx)` adapter.
  * When the database returns new fields inside `selectedHotspot.analysis_metrics` or `calendarCells`,
- * they are immediately accessible here.
+ * they are immediately accessible here along with the active language (`es` | `en`).
  */
 export interface SidePanelVisualizationContext {
   selectedHotspot: UnifiedHotspot | null;
@@ -11,6 +12,7 @@ export interface SidePanelVisualizationContext {
   calendarCells: MonthlyCalendarCell[];
   calibrationMode: CalibrationMode;
   activeYear: number;
+  lang: Language;
 }
 
 // ---------------------------------------------------------------------------
@@ -106,64 +108,64 @@ export interface KeyValueTableData {
 export type VisualizationSlotSpec =
   | {
       id: string;
-      title: string;
-      subtitle?: string;
+      title: LocalizedText;
+      subtitle?: LocalizedText;
       enabled: boolean;
       kind: 'bar_series';
       resolveData: (ctx: SidePanelVisualizationContext) => BarSeriesData | null;
     }
   | {
       id: string;
-      title: string;
-      subtitle?: string;
+      title: LocalizedText;
+      subtitle?: LocalizedText;
       enabled: boolean;
       kind: 'histogram';
       resolveData: (ctx: SidePanelVisualizationContext) => HistogramData | null;
     }
   | {
       id: string;
-      title: string;
-      subtitle?: string;
+      title: LocalizedText;
+      subtitle?: LocalizedText;
       enabled: boolean;
       kind: 'quantile_band';
       resolveData: (ctx: SidePanelVisualizationContext) => QuantileBandData | null;
     }
   | {
       id: string;
-      title: string;
-      subtitle?: string;
+      title: LocalizedText;
+      subtitle?: LocalizedText;
       enabled: boolean;
       kind: 'dual_compare';
       resolveData: (ctx: SidePanelVisualizationContext) => DualCompareData | null;
     }
   | {
       id: string;
-      title: string;
-      subtitle?: string;
+      title: LocalizedText;
+      subtitle?: LocalizedText;
       enabled: boolean;
       kind: 'stacked_share';
       resolveData: (ctx: SidePanelVisualizationContext) => StackedShareData | null;
     }
   | {
       id: string;
-      title: string;
-      subtitle?: string;
+      title: LocalizedText;
+      subtitle?: LocalizedText;
       enabled: boolean;
       kind: 'gauge_meter';
       resolveData: (ctx: SidePanelVisualizationContext) => GaugeMeterData | null;
     }
   | {
       id: string;
-      title: string;
-      subtitle?: string;
+      title: LocalizedText;
+      subtitle?: LocalizedText;
       enabled: boolean;
       kind: 'sparkline';
       resolveData: (ctx: SidePanelVisualizationContext) => SparklineTrendData | null;
     }
   | {
       id: string;
-      title: string;
-      subtitle?: string;
+      title: LocalizedText;
+      subtitle?: LocalizedText;
       enabled: boolean;
       kind: 'kv_table';
       resolveData: (ctx: SidePanelVisualizationContext) => KeyValueTableData | null;

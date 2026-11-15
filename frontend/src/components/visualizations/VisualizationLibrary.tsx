@@ -10,6 +10,7 @@ import type {
   StackedShareData,
   VisualizationSlotSpec,
 } from './contracts';
+import { resolveText, useLanguage } from '../../i18n/LanguageContext';
 
 const SEVERITY_COLORS: Record<string, string> = {
   low: '#38bdf8',
@@ -22,6 +23,7 @@ const SEVERITY_COLORS: Record<string, string> = {
 // 1. BAR SERIES WIDGET (Vertical Bars + Optional Baseline Line)
 // ---------------------------------------------------------------------------
 export function BarSeriesWidget({ data }: { data: BarSeriesData }) {
+  const { t } = useLanguage();
   if (!data.bars.length) return <EmptyNotice />;
   const maxVal = Math.max(
     1,
@@ -51,7 +53,7 @@ export function BarSeriesWidget({ data }: { data: BarSeriesData }) {
               <rect x={x} y={y} width={bw} height={barH} rx={2} fill={fill}>
                 <title>
                   {b.label}: {b.value} {data.unit ?? ''}
-                  {b.baseline !== undefined ? ` (Base: ${b.baseline})` : ''}
+                  {b.baseline !== undefined ? ` (${t.vizBaseLabel}: ${b.baseline})` : ''}
                 </title>
               </rect>
               {baseY !== null && (
@@ -81,7 +83,7 @@ export function BarSeriesWidget({ data }: { data: BarSeriesData }) {
       {data.baselineLabel && (
         <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px', display: 'flex', justifyContent: 'space-between' }}>
           <span>--- {data.baselineLabel}</span>
-          <span>Máx: {maxVal.toFixed(1)} {data.unit ?? ''}</span>
+          <span>{t.vizMaxLabel}: {maxVal.toFixed(1)} {data.unit ?? ''}</span>
         </div>
       )}
     </div>
@@ -92,6 +94,7 @@ export function BarSeriesWidget({ data }: { data: BarSeriesData }) {
 // 2. HISTOGRAM WIDGET (Distribution Bins + Active Point Highlight)
 // ---------------------------------------------------------------------------
 export function HistogramWidget({ data }: { data: HistogramData }) {
+  const { t } = useLanguage();
   if (!data.bins.length) return <EmptyNotice />;
   const maxCount = Math.max(1, ...data.bins.map((b) => b.count));
 
@@ -127,7 +130,7 @@ export function HistogramWidget({ data }: { data: HistogramData }) {
       </div>
       {data.activeValueLabel && (
         <div style={{ fontSize: '10px', color: '#991b1b', fontWeight: 600 }}>
-          ● Foco seleccionado: {data.activeValueLabel}
+          ● {t.vizSelectedHotspotPin}: {data.activeValueLabel}
         </div>
       )}
     </div>
@@ -138,6 +141,7 @@ export function HistogramWidget({ data }: { data: HistogramData }) {
 // 3. QUANTILE BOX WIDGET ([Min, P25, Median, P75, Max] + Current Pin)
 // ---------------------------------------------------------------------------
 export function QuantileBoxWidget({ data }: { data: QuantileBandData }) {
+  const { t } = useLanguage();
   const span = Math.max(0.001, data.max - data.min);
   const toPct = (v: number) => Math.min(100, Math.max(0, ((v - data.min) / span) * 100));
 
@@ -172,7 +176,7 @@ export function QuantileBoxWidget({ data }: { data: QuantileBandData }) {
             height: '20px',
             background: '#9a3412',
           }}
-          title={`Mediana (P50): ${data.median} ${data.unit ?? ''}`}
+          title={`${t.vizMedianTooltip}: ${data.median} ${data.unit ?? ''}`}
         />
         {/* Active Point Marker */}
         {curPct !== null && (
@@ -187,16 +191,16 @@ export function QuantileBoxWidget({ data }: { data: QuantileBandData }) {
               border: '2px solid #ffffff',
               boxShadow: '0 0 0 1.5px #7f1d1d',
             }}
-            title={`Valor actual: ${data.current} ${data.unit ?? ''}`}
+            title={`${t.vizCurrentValueTooltip}: ${data.current} ${data.unit ?? ''}`}
           />
         )}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#475569', fontFamily: 'monospace' }}>
-        <span>Mín: {data.min.toFixed(1)}</span>
+        <span>{t.vizMinLabel}: {data.min.toFixed(1)}</span>
         <span>P25: {data.p25.toFixed(1)}</span>
         <strong>P50: {data.median.toFixed(1)}</strong>
         <span>P75: {data.p75.toFixed(1)}</span>
-        <span>Máx: {data.max.toFixed(1)} {data.unit ?? ''}</span>
+        <span>{t.vizMaxLabel}: {data.max.toFixed(1)} {data.unit ?? ''}</span>
       </div>
     </div>
   );
@@ -381,9 +385,10 @@ export function KeyValueTableWidget({ data }: { data: KeyValueTableData }) {
 }
 
 function EmptyNotice() {
+  const { t } = useLanguage();
   return (
     <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic', padding: '4px 0' }}>
-      Selecciona un foco o consulta el AOI para poblar esta visualización.
+      {t.vizEmptyNotice}
     </div>
   );
 }
@@ -400,7 +405,7 @@ export function VisualizationModuleRenderer({
 }) {
   if (!slot.enabled) return null;
 
-  let body: JSX.Element | null = null;
+  let body: React.ReactNode = null;
 
   switch (slot.kind) {
     case 'bar_series': {
@@ -458,8 +463,14 @@ export function VisualizationModuleRenderer({
       }}
     >
       <div>
-        <strong style={{ fontSize: '12px', color: '#0f172a', display: 'block' }}>{slot.title}</strong>
-        {slot.subtitle && <span style={{ fontSize: '10px', color: '#64748b' }}>{slot.subtitle}</span>}
+        <strong style={{ fontSize: '12px', color: '#0f172a', display: 'block' }}>
+          {resolveText(slot.title, context.lang)}
+        </strong>
+        {slot.subtitle && (
+          <span style={{ fontSize: '10px', color: '#64748b' }}>
+            {resolveText(slot.subtitle, context.lang)}
+          </span>
+        )}
       </div>
       {body}
     </div>

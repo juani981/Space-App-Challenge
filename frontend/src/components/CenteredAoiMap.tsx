@@ -6,6 +6,7 @@ import {
   getSatelliteGeneration,
   sortHotspotsByZOrder,
 } from '../utils/satelliteGenerations';
+import { useLanguage } from '../i18n/LanguageContext';
 
 export type MapRenderMode = 'harmonized' | 'footprint';
 
@@ -73,12 +74,6 @@ function ViewportBoxTracker({
   return null;
 }
 
-/**
- * Map component with centered orange AOI viewfinder, clickable hotspot markers,
- * and a Radio Toggle between:
- * 1. "Ver puntos armonizados" (estilo homogéneo calibrado)
- * 2. "Discriminar por satélite y huella real en metros" (huellas físicas con <Circle> y zOrder G1->G4).
- */
 export function CenteredAoiMap({
   onBoundsChange,
   hotspots = [],
@@ -88,6 +83,7 @@ export function CenteredAoiMap({
   renderMode: controlledMode,
   onRenderModeChange,
 }: CenteredAoiMapProps) {
+  const { t } = useLanguage();
   const [internalMode, setInternalMode] = useState<MapRenderMode>('harmonized');
   const activeMode = controlledMode ?? internalMode;
 
@@ -145,7 +141,7 @@ export function CenteredAoiMap({
                   <div style={{ fontSize: '11px', lineHeight: 1.3 }}>
                     <strong>{hs.satellite} ({gen.generation})</strong> — {hs.frp} MW<br />
                     {hs.datetime_utc.slice(0, 16).replace('T', ' ')} UTC<br />
-                    {isCluster && <span style={{ color: '#d97706', fontWeight: 600 }}>Foco fusionado (cluster)</span>}
+                    {isCluster && <span style={{ color: '#d97706', fontWeight: 600 }}>{t.mapClusterBadge}</span>}
                   </div>
                 </Tooltip>
               </CircleMarker>
@@ -172,8 +168,8 @@ export function CenteredAoiMap({
                 <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
                   <div style={{ fontSize: '11px', lineHeight: 1.3 }}>
                     <strong>{gen.name} ({gen.generation})</strong><br />
-                    Huella física: {gen.resolutionMeters}m ({gen.footprintRadiusMeters}m radio)<br />
-                    FRP: {hs.frp} MW | Confianza: {hs.confidence}<br />
+                    {t.mapTooltipFootprint}: {gen.resolutionMeters}m ({gen.footprintRadiusMeters}m {t.mapTooltipRadius})<br />
+                    FRP: {hs.frp} MW | {t.mapTooltipConfidence}: {hs.confidence}<br />
                     {hs.datetime_utc.slice(0, 16).replace('T', ' ')} UTC
                   </div>
                 </Tooltip>
@@ -210,11 +206,11 @@ export function CenteredAoiMap({
           boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
           padding: '10px 14px',
           border: '1px solid #cbd5e1',
-          maxWidth: '310px',
+          maxWidth: '330px',
         }}
       >
         <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
-          Modo de Visualización Espacial
+          {t.mapControlTitle}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <label
@@ -236,7 +232,7 @@ export function CenteredAoiMap({
               onChange={() => handleModeChange('harmonized')}
               style={{ cursor: 'pointer' }}
             />
-            Ver puntos armonizados (Homogéneo)
+            {t.mapRadioHarmonized}
           </label>
           <label
             style={{
@@ -257,7 +253,7 @@ export function CenteredAoiMap({
               onChange={() => handleModeChange('footprint')}
               style={{ cursor: 'pointer' }}
             />
-            Discriminar por satélite y huella real (metros)
+            {t.mapRadioFootprint}
           </label>
         </div>
 
@@ -265,7 +261,7 @@ export function CenteredAoiMap({
         {activeMode === 'footprint' && (
           <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid #e2e8f0', fontSize: '11px' }}>
             <div style={{ fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
-              Huella física en el suelo:
+              {t.mapFootprintLegendTitle}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
               {(['G1', 'G2', 'G3', 'G4'] as const).map((genKey) => {
