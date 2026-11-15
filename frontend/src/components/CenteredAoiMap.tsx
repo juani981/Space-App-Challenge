@@ -382,101 +382,134 @@ export function CenteredAoiMap({
         })}
       </MapContainer>
 
-      {/* Compact Floating Geolocation Pill on Map */}
+      {/* Bottom-Right Conventional Map Controls (GPS Locate & Drop-Pin) */}
       <div
         style={{
           position: 'absolute',
-          top: '12px',
+          bottom: '28px',
           right: '12px',
           zIndex: 1001,
-          background: 'rgba(255, 255, 255, 0.95)',
-          backdropFilter: 'blur(4px)',
-          borderRadius: '8px',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
-          padding: '8px 10px',
-          border: '1px solid #cbd5e1',
-          maxWidth: '340px',
+          display: 'flex',
+          alignItems: 'flex-end',
+          gap: '8px',
         }}
       >
-        {/* Geolocation Controls: Auto-GPS + Manual Map Pin */}
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+        {/* Contextual helper pill (only shown when Picking mode is active or on manual GPS error) */}
+        {(isPickingLocation || geoHasError) && (
+          <div
+            style={{
+              background: isPickingLocation ? 'rgba(15, 23, 42, 0.92)' : '#fffbeb',
+              color: isPickingLocation ? '#f8fafc' : '#b45309',
+              border: `1px solid ${isPickingLocation ? '#334155' : '#fde68a'}`,
+              borderRadius: '6px',
+              padding: '6px 10px',
+              fontSize: '11px',
+              fontWeight: 600,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              maxWidth: '260px',
+            }}
+          >
+            <span>{isPickingLocation ? t.pickLocationActiveBtn : `⚠️ ${t.geoErrorNotice}`}</span>
+            {geoHasError && !isPickingLocation && (
+              <button
+                type="button"
+                onClick={() => setGeoHasError(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#b45309',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  padding: '0 2px',
+                  fontSize: '13px',
+                  lineHeight: 1,
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Standard Map Control Button Stack (Google Maps / Leaflet style) */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            background: '#ffffff',
+            borderRadius: '8px',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.28)',
+            border: '1px solid rgba(15, 23, 42, 0.14)',
+            overflow: 'hidden',
+          }}
+        >
+          {/* 1. Conventional GPS "My Location" Button */}
           <button
             type="button"
+            title={t.locateMeBtn.replace('📍 ', '')}
+            aria-label={t.locateMeBtn.replace('📍 ', '')}
             onClick={() => {
               setIsPickingLocation(false);
               setGeoHasError(false);
               setLocateTrigger((n) => n + 1);
             }}
             style={{
-              padding: '4px 8px',
-              fontSize: '11px',
-              fontWeight: 600,
-              background: '#f0f9ff',
-              color: '#0369a1',
-              border: '1px solid #bae6fd',
-              borderRadius: '5px',
+              width: '38px',
+              height: '38px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: '#ffffff',
+              color: userCoords ? '#0284c7' : '#334155',
+              border: 'none',
+              borderBottom: '1px solid #e2e8f0',
               cursor: 'pointer',
-              whiteSpace: 'nowrap',
+              padding: 0,
+              transition: 'background 0.15s ease, color 0.15s ease',
             }}
           >
-            {t.locateMeBtn}
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="7" />
+              <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
+              <line x1="12" y1="2" x2="12" y2="5" />
+              <line x1="12" y1="19" x2="12" y2="22" />
+              <line x1="2" y1="12" x2="5" y2="12" />
+              <line x1="19" y1="12" x2="22" y2="12" />
+            </svg>
           </button>
 
+          {/* 2. Conventional Map Drop-Pin "Pick on Map" Button */}
           <button
             type="button"
+            title={t.pickLocationBtn.replace('🎯 ', '')}
+            aria-label={t.pickLocationBtn.replace('🎯 ', '')}
             onClick={() => {
               setGeoHasError(false);
               setIsPickingLocation((prev) => !prev);
             }}
             style={{
-              padding: '4px 8px',
-              fontSize: '11px',
-              fontWeight: 600,
-              background: isPickingLocation ? '#0284c7' : '#f8fafc',
+              width: '38px',
+              height: '38px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: isPickingLocation ? '#0284c7' : '#ffffff',
               color: isPickingLocation ? '#ffffff' : '#334155',
-              border: `1px solid ${isPickingLocation ? '#0369a1' : '#cbd5e1'}`,
-              borderRadius: '5px',
+              border: 'none',
               cursor: 'pointer',
-              whiteSpace: 'nowrap',
+              padding: 0,
+              transition: 'background 0.15s ease, color 0.15s ease',
             }}
           >
-            {isPickingLocation ? t.pickLocationActiveBtn : t.pickLocationBtn}
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 21s-7-6.58-7-12a7 7 0 1 1 14 0c0 5.42-7 12-7 12z" />
+              <circle cx="12" cy="9" r="2.5" />
+            </svg>
           </button>
         </div>
-
-        {geoHasError && (
-          <div
-            style={{
-              fontSize: '10px',
-              color: '#b45309',
-              background: '#fffbeb',
-              border: '1px solid #fde68a',
-              borderRadius: '4px',
-              padding: '4px 8px',
-              marginTop: '6px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            <span>⚠️ {t.geoErrorNotice}</span>
-            <button
-              type="button"
-              onClick={() => setGeoHasError(false)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#b45309',
-                fontWeight: 700,
-                cursor: 'pointer',
-                padding: '0 2px',
-              }}
-            >
-              ×
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );
