@@ -37,6 +37,7 @@ from harmonized_cell_month import (
     compute_aoi_grid_area_km2,
     compute_cell_month_calendar_anomalies,
     decode_quality_flags,
+    iter_calendar_months,
     row_col_to_cell_id,
     spherical_cell_area_km2,
 )
@@ -47,18 +48,6 @@ logger = logging.getLogger("backend.cell_month")
 SERIES_START_DATE = date(2012, 1, 1)
 SERIES_END_DATE = date(2026, 8, 1)
 USE_CELL_ID_RANGES = os.getenv("CELL_MONTH_USE_CELL_ID_RANGES", "false").lower() == "true"
-
-
-def _iter_series_months(start: date = SERIES_START_DATE, end: date = SERIES_END_DATE) -> list[date]:
-    months: list[date] = []
-    y, m = start.year, start.month
-    while (y, m) <= (end.year, end.month):
-        months.append(date(y, m, 1))
-        m += 1
-        if m > 12:
-            m = 1
-            y += 1
-    return months
 
 
 def _parse_iso_month(date_str: Optional[str], fallback: date) -> date:
@@ -256,7 +245,7 @@ def generate_stub_cell_month_rows(
     for development/testing when the real Postgres `.dump` is not loaded yet.
     """
     cells = _sample_aoi_cells(min_lon, min_lat, max_lon, max_lat)
-    months = _iter_series_months(start_month, end_month)
+    months = iter_calendar_months(start_month, end_month)
     rows: list[HarmonizedCellMonthRow] = []
 
     for cell_id, lat_c, lon_c, area in cells:
@@ -389,7 +378,20 @@ def query_cell_month_aoi(
     area_km2 = compute_aoi_grid_area_km2(min_lon, lo_lat, max_lon, hi_lat)
 
     all_rows, source_used = _fetch_all_rows_for_aoi(min_lon, lo_lat, max_lon, hi_lat)
-    monthly_series = aggregate_rows_by_month(all_rows, area_region_km2=area_km2)
+    all_months = iter_calendar_months(SERIES_START_DATE, SERIES_END_DATE)
+    # Month-level quality flags kept independent of sparse cell rows (corrected spec);
+    # once v0.2 auxiliary quality table is delivered, Postgres mode will load from it directly.
+    monthly_quality_map = (
+        {m: _month_provenance_and_flags(m)[2] for m in all_months}
+        if source_used == "stub"
+        else None
+    )
+    monthly_series = aggregate_rows_by_month(
+        all_rows,
+        area_region_km2=area_km2,
+        all_months=all_months,
+        monthly_quality_map=monthly_quality_map,
+    )
     calendar_anomalies = compute_cell_month_calendar_anomalies(monthly_series, metric=metric)
 
     win_start = _parse_iso_month(start_date, date(2024, 1, 1))

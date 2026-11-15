@@ -19,6 +19,7 @@ from harmonized_cell_month import (
     compute_aoi_grid_area_km2,
     compute_cell_month_calendar_anomalies,
     decode_quality_flags,
+    iter_calendar_months,
     spherical_cell_area_km2,
 )
 
@@ -190,16 +191,17 @@ class TestHarmonizedCellMonthEngine(unittest.TestCase):
         self.assertEqual(payload["method_version"], "v0.1-provisional")
         self.assertIn(payload["data_source"], ("stub", "postgres"))
         self.assertGreater(payload["area_region_km2"], 0.0)
-        self.assertGreater(len(payload["calendar_anomalies"]), 100)
+        # Complete 2012-01..2026-08 calendar (176 months) even when sparse AOI has zero-fire months
+        self.assertEqual(len(payload["calendar_anomalies"]), 176)
         self.assertIn("pending_confirmations", payload)
         self.assertIn("n_terra_separate_series", payload["summary"])
 
-        # Verify 2026-08 carries MODIS_ONLY + LAST_MONTH flags when present in calendar
+        # Verify 2026-08 unconditionally carries MODIS_ONLY + LAST_MONTH from month-level quality map
         aug_2026 = [c for c in payload["calendar_anomalies"] if c["year"] == 2026 and c["month_num"] == 8]
-        if aug_2026:
-            codes = {f["code"] for f in aug_2026[0]["quality_flags_decoded"]}
-            self.assertIn("modis_only", codes)
-            self.assertIn("last_month", codes)
+        self.assertEqual(len(aug_2026), 1)
+        codes = {f["code"] for f in aug_2026[0]["quality_flags_decoded"]}
+        self.assertIn("modis_only", codes)
+        self.assertIn("last_month", codes)
 
         # Verify CSV export
         csv_resp = client.get(
@@ -234,6 +236,33 @@ class TestHarmonizedCellMonthEngine(unittest.TestCase):
         sql_cid, params_cid = _build_spatial_where_clause(-0.5, -0.5, 0.0, 0.0, use_cell_id_ranges=True)
         self.assertIn("cell_id BETWEEN %s AND %s", sql_cid)
         self.assertEqual(len(params_cid), 4)  # 2 latitude rows * 2 bounds each
+
+    def test_sparse_zero_months_and_month_level_quality_table(self):
+        """Zero-fire months are filled as 0.0 via calendar sequence and preserve month-level flags."""
+        area = 8000.0
+        # Only 1 active fire row in March 2024; 2012..2026 other Marches had 0 fires
+        rows = [_make_row(2024, 3, cell_id=300, n_eq=25.0, f_eq=250.0)]
+        all_months = iter_calendar_months(date(2012, 1, 1), date(2026, 8, 1))
+        monthly_quality = {date(2026, 8, 1): int(QualityFlagBits.MODIS_ONLY | QualityFlagBits.LAST_MONTH)}
+
+        agg = aggregate_rows_by_month(
+            rows,
+            area_region_km2=area,
+            all_months=all_months,
+            monthly_quality_map=monthly_quality,
+        )
+        self.assertEqual(len(agg), 176)
+
+        aug26 = [m for m in agg if m.month == date(2026, 8, 1)][0]
+        self.assertEqual(aug26.n_eq, 0.0)
+        self.assertTrue(bool(aug26.quality_flag & QualityFlagBits.MODIS_ONLY))
+
+        anomalies = compute_cell_month_calendar_anomalies(agg, metric="n_eq")
+        mar24 = [a for a in anomalies if a.year == 2024 and a.month_num == 3][0]
+        # 2012..2023 + 2025..2026 Marches (14 zero-fire years) count as valid baseline!
+        self.assertTrue(mar24.anomaly_available)
+        self.assertEqual(mar24.baseline_years_count, 14)
+        self.assertTrue(mar24.is_series_record)
 
 
 if __name__ == "__main__":

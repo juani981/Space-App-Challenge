@@ -38,16 +38,23 @@ LonConvention = Literal["signed_180", "unsigned_360"]
 # Update these values once the other team returns the exact DDL & Phase-1 spec.
 # =====================================================================
 PENDING_TEAM_CONFIRMATION: dict[str, Any] = {
-    "cell_id_row_origin": "north_to_south",   # Provisional: confirm row=0 (+89.875 vs -89.875)
+    "awaiting_version": "v0.2",               # Reply requested in CONTRATO_DATOS_WEB.md after v0.2 closes
+    "cell_id_row_origin": "north_to_south",   # Provisional: confirm row=0 (+89.875 vs -89.875) + 3 test cases
     "lon_convention": "signed_180",           # Provisional: [-180, 180] vs [0, 360]
-    "quality_flag_bitmask_confirmed": False,  # Confirm exact bit exponents in Phase 1 doc
+    "quality_flag_bitmask_confirmed": False,  # Confirm exact bit exponents & month-level table
     "ref_sat_modis_only_value": None,         # Confirm NULL vs special token in 2026-08
+    "inactive_satellite_zero_or_null": 0,     # Confirm 0 vs NULL for n_*/frp_* before sensor launch
     "frp_matches_count_filters": True,        # Confirm type=0 & no-low-conf on frp_*
+    "source_postgres_version": None,          # Confirm compatibility with PostgreSQL 18 restore
     "auxiliary_tables": {
         "grid_areas_table": None,
+        "monthly_quality_table": None,
+        "reference_plan_table": None,
+        "gaps_catalog_table": None,
+        "global_month_table": None,
+        "map_layer_table": None,
         "one_degree_table": None,
         "climatology_table": None,
-        "gaps_catalog_table": None,
     },
 }
 
@@ -315,37 +322,58 @@ def compute_aoi_grid_area_km2(
     return round(total_area, 3)
 
 
+def iter_calendar_months(start_month: date, end_month: date) -> list[date]:
+    """Generates an unbroken monthly calendar sequence (`generate_series` equivalent)."""
+    months: list[date] = []
+    y, m = start_month.year, start_month.month
+    while (y, m) <= (end_month.year, end_month.month):
+        months.append(date(y, m, 1))
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+    return months
+
+
 # =====================================================================
 # REGIONAL AGGREGATION & ANOMALY ENGINE (SECTIONS 3 & 4)
 # =====================================================================
 def aggregate_rows_by_month(
     rows: list[HarmonizedCellMonthRow],
     area_region_km2: float,
+    all_months: Optional[list[date]] = None,
+    monthly_quality_map: Optional[dict[date, int]] = None,
+    default_method_version: str = DEFAULT_METHOD_VERSION,
 ) -> list[MonthlyRegionAggregate]:
     """
     Aggregates sparse `harmonized.cell_month` rows into one regional time-series entry per month.
-    Enforces the scientific rule that `method_version` cannot be mixed within a single series.
+    When `all_months` is provided (`generate_series LEFT JOIN` pattern), missing sparse months are
+    filled as `0.0` instead of gaps, and `monthly_quality_map` injects month-level observation flags
+    so zero-activity months never lose quality/exclusion metadata.
     """
     if area_region_km2 <= 0:
         raise ValueError("area_region_km2 must be positive")
-    if not rows:
+    if not rows and not all_months:
         return []
 
     versions = {r.method_version for r in rows}
     if len(versions) > 1:
         raise ValueError(f"Cannot mix method_version values in a single series: {sorted(versions)}")
-    method_version = next(iter(versions))
+    method_version = next(iter(versions)) if versions else default_method_version
 
     buckets: dict[date, list[HarmonizedCellMonthRow]] = {}
     for row in rows:
         buckets.setdefault(row.month, []).append(row)
 
+    target_months = sorted(set(all_months) | set(buckets.keys())) if all_months else sorted(buckets.keys())
+    quality_lookup = monthly_quality_map or {}
+
     aggregates: list[MonthlyRegionAggregate] = []
-    for month_dt in sorted(buckets.keys()):
-        group = buckets[month_dt]
+    for month_dt in target_months:
+        group = buckets.get(month_dt, [])
         n_eq_sum = sum(r.n_eq for r in group)
         f_eq_sum = sum(r.f_eq for r in group)
-        combined_flag = bit_or_flags([r.quality_flag for r in group])
+        combined_flag = bit_or_flags([r.quality_flag for r in group] + [quality_lookup.get(month_dt, 0)])
 
         n_terra = sum(r.n_terra for r in group)
         frp_terra = sum(r.frp_terra for r in group)
