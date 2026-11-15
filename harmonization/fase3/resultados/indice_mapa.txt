@@ -1,0 +1,49 @@
+﻿SET
+SELECT 4
+CREATE FUNCTION
+SELECT 9588557
+ALTER TABLE
+VACUUM
+##### 1. Solo PK (cell_id, month): calendario (2 ejecuciones, se reporta la 2ª)
+ nombre | x 
+--------+---
+
+      nombre      |                                                                x                                                                
+------------------+---------------------------------------------------------------------------------------------------------------------------------
+ chica_cordoba    |               ->  Index Scan using cm_pkey on cm m  (cost=0.45..52910.35 rows=1065368 width=18) (actual rows=839.00 loops=22)
+ chica_cordoba    | Execution Time: 24.412 ms
+ media_2000       |               ->  Index Scan using cm_pkey on cm m  (cost=0.45..37109.08 rows=1065368 width=18) (actual rows=4621.18 loops=44)
+ media_2000       | Execution Time: 129.368 ms
+ grande_argentina |               ->  Index Scan using cm_pkey on cm m  (cost=0.45..26574.90 rows=1065368 width=18) (actual rows=2720.80 loops=132)
+ grande_argentina | Execution Time: 279.898 ms
+ sudamerica       |               ->  Index Scan using cm_pkey on cm m  (cost=0.45..23826.85 rows=1065368 width=18) (actual rows=6789.63 loops=276)
+ sudamerica       | Execution Time: 1367.517 ms
+
+##### 2. PK + índice de mapa (month, cell_id) INCLUDE (n_eq, f_eq, quality_flag)
+CREATE INDEX
+ANALYZE
+ nombre | x 
+--------+---
+
+      nombre      |                                                                  x                                                                   
+------------------+--------------------------------------------------------------------------------------------------------------------------------------
+ chica_cordoba    |               ->  Index Only Scan using cm_mapa on cm m  (cost=0.45..30003.46 rows=1065373 width=18) (actual rows=839.00 loops=22)
+ chica_cordoba    | Execution Time: 96.756 ms
+ media_2000       |               ->  Index Only Scan using cm_mapa on cm m  (cost=0.45..25693.91 rows=1065373 width=18) (actual rows=4621.18 loops=44)
+ media_2000       | Execution Time: 205.101 ms
+ grande_argentina |               ->  Index Only Scan using cm_mapa on cm m  (cost=0.45..22820.88 rows=1065373 width=18) (actual rows=2720.80 loops=132)
+ grande_argentina | Execution Time: 308.679 ms
+ sudamerica       |               ->  Index Only Scan using cm_mapa on cm m  (cost=0.45..22071.39 rows=1065373 width=18) (actual rows=6789.63 loops=276)
+ sudamerica       | Execution Time: 2616.401 ms
+
+##### 3. Capa de mapa de un mes con ambos índices
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Index Only Scan using cm_mapa on cm  (cost=0.43..2391.07 rows=63922 width=14) (actual rows=63194.00 loops=1)
+   Index Cond: (month = '2024-08-01'::date)
+   Heap Fetches: 0
+   Index Searches: 1
+   Buffers: local hit=7 read=312
+ Planning Time: 0.043 ms
+ Execution Time: 9.803 ms
+

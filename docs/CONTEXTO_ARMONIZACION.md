@@ -23,6 +23,22 @@ Estas decisiones son posteriores al resto del documento. Si una sección dice ot
 9. **Grilla y escala:** celda base de **0,25°** con **agregados diarios** por (día, celda, satélite), de los que se derivan los mensuales.
 10. **Tablas derivadas:** se construyen como **`UNLOGGED`** (para no generar ~10–15 GB de WAL en C:) y se pasan a `LOGGED` al terminar y validar cada etapa.
 
+**Decisiones tomadas en la Puerta 2 (15-nov-2026, sobre `harmonization/fase1/DISENO_FASE1.md`):**
+
+11. **Unidad de salida: equivalente Aqua**, definida por la calibración **2012–2020** (Aqua cerca de su hora nominal), no por Aqua en cada momento. Terra se conserva como serie propia visible, fuera de la serie armonizada. Ago-2026 = `N_Aqua` directo con bandera `solo_modis_deriva`, excluido de la línea base.
+12. **Anomalía:** percentil leave-one-out principal, con **cuatro clases (≤ 50, 50–75, 75–90, > 90) más la marca "récord de la serie"**; z robusto secundario (tooltip y CSV). Reportar que ningún mes calendario quede con menos de 10 años de base.
+13. **Región:** rectángulo y polígono. Calendario por centro de celda (backend, sin PostGIS), con aviso y conteo de celdas si son menos de ~4; CSV con puntos crudos y polígono exacto tras acotar por rectángulo y fecha. Topes: ≤ 1.000 vértices, ≤ 50.000 celdas; pirámide de 1° desde ~2.000 celdas; **la API informa la resolución usada**. Documentar la diferencia calendario vs CSV en los bordes.
+14. **Capa canónica como vista** (`harmonized.v_detection`), verificando que el filtro de fecha llegue a cada tabla cruda (sin escaneos completos).
+15. **CSV:** tope de 12 meses o 1 M filas, sin índice nuevo en las crudas. Si una descarga típica supera ~15 s en el piloto, proponer el índice con su costo.
+16. **`LOGGED` partición por partición** tras validar.
+17. **`quality_flag` de 8 bits**; se excluyen de la línea base los meses con ≥ 5 días de hueco.
+18. **Respaldo de referencia:** si el VIIRS de referencia tiene ≥ 5 días de hueco en un mes, se usa el siguiente de la cadena, registrado en `sensors`, verificando que el reemplazo no esté también incompleto; cubierto por el test de escalones de la Fase 3.
+19. **Casi-nadir (solo para evaluar la calibración, no para filtrar la serie):** VIIRS `scan` ≤ 0,5 km; MODIS **relativo al píxel de nadir de cada satélite y año** (no un corte fijo), porque el píxel de Terra y Aqua cambia desde 2024.
+20. **Particionado anual** de los agregados diarios y **2 procesos** en paralelo.
+21. **Regiones de calibración:** bandas de 10° como punto de partida; en la Fase 3 compararlas con alternativas (p. ej. banda × sector continental) con validación cruzada por año.
+22. **Aprobación por escala:** piloto (ene-2026) y año 2024 con aprobación del usuario; después se sigue sin pedir otra **si la conciliación es exacta y los tiempos están dentro de 2× lo estimado**. Si algo falla, frenar y avisar.
+23. Tras validar, proponer un **respaldo del esquema `harmonized`** e informar si existe respaldo de las tablas crudas.
+
 ## 1. Objetivo
 
 Construir una **serie temporal consistente de actividad de focos de incendio activos (2012–2026, ver sección 0)** que combine la serie histórica larga de MODIS con la continuidad y el mayor detalle de VIIRS, de modo que **el sensor de origen deje de importar** y lo visible sean patrones, tendencias y anomalías.
@@ -108,6 +124,23 @@ Las metas numéricas finales (horas de procesamiento total, GB, latencias) se fi
 - **Cobertura**: entre órbitas consecutivas MODIS deja un hueco de ~350 km en el ecuador, mientras que los barridos de VIIRS se solapan ~350 km.
 - **Ciclo diurno**: en regiones tropicales y subtropicales el pico de quema cae entre las 13:00 y las 18:30 hora local (Giglio 2007). Observaciones a distinta hora muestrean etapas distintas del ciclo, y la detección de MODIS de 1 km empeora al alejarse del pico (~15:00).
 
+### 3.5 Medido en la Fase 0 y en las aclaraciones de la Fase 1 (base `wildfire-nasa`)
+
+- **Conciliación:** 610.870.539 filas cargadas − 22.085.803 NRT eliminadas = **588.784.736** filas vigentes, verificado fila por fila. Es la base de la conciliación de la sección 9; el NRT es una exclusión previa documentada en `carga_log.observacion`.
+- **Deriva de la hora de pasada** (hora solar local mediana de las detecciones diurnas `type = 0`, enero y julio):
+
+  | | 2012–2021 | 2022 | 2023 | 2024 | 2025 | 2026 |
+  |---|---|---|---|---|---|---|
+  | Aqua | 13,55–13,58 h | 13,61 | 13,77 | 14,11 | 14,58 | **15,27** |
+  | Terra | 10,61–10,69 h | 10,48 | 10,33 | 10,06 | 9,66 | **9,27** |
+  | S-NPP | 13,38–13,50 h | 13,40 | 13,42 | 13,40 | 13,43 | 13,50 |
+
+  Por eso la validación 2021–2026 contra Aqua se reporta separada como **"deriva de Aqua"** (no como error de calibración); el error de calibración se mide con validación cruzada por año dentro de 2012–2020.
+- **Tamaño de píxel MODIS:** `scan` medio de Terra y Aqua ~1,60 km hasta 2023 y 1,52–1,54 en 2026; la mediana pasa de 1,3 a 1,2 km en 2026. VIIRS estable en ~0,46 km.
+- **Degradación de S-NPP:** 49 días sin datos (bloques en 2022, 2024 y 2026, incluido 2026-07-10 → 07-16) y varias caídas parciales.
+- **Minutos de adquisición distintos** (`acq_time`) por satélite y día detectan pasadas faltantes: en la caída de Aqua del 23 y 24-sep-2021 bajan de ~200 a 65 y 57; en la caída de S-NPP del 3 al 5-oct-2016 (−35 % de detecciones) siguen en ~445 (no faltaron pasadas).
+- **Servidor:** `archive_mode = off`, sin slots ni conexiones de replicación: las tablas `UNLOGGED` no generan WAL durante la construcción.
+
 ## 4. Hipótesis a validar con datos (no asumir)
 
 1. VIIRS detecta más focos que MODIS por su píxel más fino; los conteos crudos no son comparables.
@@ -167,7 +200,7 @@ Principio: **no se intenta igualar conteos crudos entre sensores.** Se define un
 
 1. **Estratificar por órbita y hora local.** Guardar `local_solar_hour` por detección (UTC + lon/15; refinable con la ecuación del tiempo) y separar en dos familias: **órbita de la mañana** (solo Terra; nominal 10:30/22:30, hoy derivando hacia ~9:00) y **órbita de la tarde** (Aqua + S-NPP + NOAA-20 + NOAA-21; nominal 13:30/1:30). Como VIIRS no tiene pasada matutina, **Terra no se puede calibrar contra VIIRS a igual hora**. No mezclar familias en un mismo conteo.
 2. **Observable común**: celdas de ~1 km ocupadas por día y FRP total por celda, solo `type = 0`, en lugar de conteo de detecciones. Reduce el efecto del píxel de 375 m y los duplicados dentro de una pasada. Entre satélites VIIRS de una misma familia: unión de celdas ocupadas o máximo, **nunca suma**.
-3. **Igualar la geometría de observación**: evaluar un filtro casi-nadir con `scan`/`track` en ambos sensores (la base no tiene `sample` de MODIS, ver 3.1) y medir cuánto cambia la calibración con y sin él.
+3. **Igualar la geometría de observación**: evaluar un filtro casi-nadir con `scan`/`track` en ambos sensores (la base no tiene `sample` de MODIS, ver 3.1; en MODIS el umbral es **relativo al píxel de nadir de cada satélite y año**, sección 0.19) y medir cuánto cambia la calibración con y sin él.
 4. **Normalizar por esfuerzo de observación.** Los archivos de focos no informan nubes ni datos faltantes. Opciones: (a) agregar en ventanas ≥ 8 días o mensuales para promediar el muestreo; (b) estimar el esfuerzo con trazas/swaths o metadatos de gránulos si se consiguen; (c) proxy empírico contra otro satélite de la misma familia. Referencia: los productos CMG de UMD normalizan por la cobertura esperada.
 5. **Calibrar en el solapamiento**, sobre agregados (celda × semana o mes): Aqua↔S-NPP (2012→), S-NPP↔NOAA-20 (2018→), NOAA-20↔NOAA-21; por banda de latitud/región y estación; incluyendo un término de hora local. La deriva de Aqua hacia la tarde mientras VIIRS se mantiene en ~13:30 es un **experimento natural** para estimar el efecto de la hora de pasada. Validar en años reservados. Terra: si hace falta un "MODIS combinado", escalarlo contra Aqua dentro de 2012–2020 (mismo algoritmo, distinta hora de pasada) y propagar una incertidumbre mayor.
 6. **Huecos y fallas**: detectarlos empíricamente (caídas anómalas del conteo diario de un satélite respecto de su par de familia y de su vecindad temporal) y por fechas conocidas (falla de Aqua, ago-2020). Marcar `quality_flag` (ok / parcial / caída), **no imputar en silencio**, excluir esos días de la climatología base y mostrarlos como hueco en el calendario. Se puede rellenar con otro satélite de la misma familia solo con marca de procedencia.
@@ -192,7 +225,7 @@ El equipo definió su estrategia en `ESTRATEGIA_ARMONIZACION.md` (copiarla al re
 - **A2. S-NPP no puede ser el único VIIRS.** Sirve como referencia durante su registro, pero **FIRMS anunció el fin de su producción para el 2-nov-2026**: la serie debe continuar con NOAA-20 y NOAA-21 (mismo sensor y mismo plano orbital, ~50 min de diferencia). El doble conteo se evita **no sumando satélites** (unión de celdas o un satélite de referencia por período), no excluyéndolos. Cadena: Aqua↔S-NPP, S-NPP↔NOAA-20, NOAA-20↔NOAA-21.
 - **A3. Cifras sin respaldo.** No usar 10–11×, 3,4× ni α ≈ 0,09–0,11 como valores iniciales ni de validación; estimar todo con los datos y reportar cualquier discrepancia.
 - **A4. Un único α no alcanza.** La relación depende de la región, la estación, la distribución de tamaños de fuego y la hora de pasada. Ajustar por banda de latitud/región y estación, **sin intercepto por defecto** (ver 6d.1) y con término de hora local; comparar alternativas (celdas de ~1 km ocupadas, mapeo por cuantiles) y elegir por error en años reservados y por ausencia de escalones en las fechas de transición.
-- **A5. Ventana de calibración**: preferir **2012–2020**, antes de que la deriva de Terra y Aqua sea significativa (últimas maniobras de corrección: feb-2020 y mar-2021), y usar **2021–2026 como validación** para medir cuánto afecta la deriva.
+- **A5. Ventana de calibración**: preferir **2012–2020**, antes de que la deriva de Terra y Aqua sea significativa (últimas maniobras de corrección: feb-2020 y mar-2021), y usar **2021–2026 como validación** para medir cuánto afecta la deriva. Esa validación se reporta separada como **"deriva de Aqua"** (sección 3.5): mide en parte el corrimiento de Aqua y no solo el error de la calibración.
 - **A6. Filtros como parámetros.** `type = 0` se aplica a todas las filas (el NRT ya no está en la base). El umbral de confianza no es equivalente entre sensores (porcentaje en MODIS, `l/n/h` en VIIRS): conservar agregados **con y sin** filtro de confianza y medir la sensibilidad de la calibración.
 - **A7. Anomalía robusta.** Media y desviación estándar son sensibles a años extremos y a distribuciones asimétricas con muchos ceros. Evaluar mediana/MAD, transformación logarítmica o percentil histórico; definir un mínimo de años; manejar varianza cero. La climatología se calcula sobre la serie ya armonizada y excluye los meses con bandera de caída. **Definición concreta en 6d.3.**
 - **A8. Grilla.** 0,25° mensual sirve para calibrar y para el calendario regional (y respeta la cautela de la guía sobre intervalos menores a ~8 días). Para regiones arbitrarias conviene una grilla base más fina con agregados diarios, de la que se derive la de 0,25°. Decidir con mediciones de tamaño y latencia en la Fase 1.
