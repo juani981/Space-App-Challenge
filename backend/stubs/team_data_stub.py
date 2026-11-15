@@ -109,10 +109,17 @@ def _query_database(
     end_date: Optional[str],
 ) -> list[dict[str, Any]]:
     """
-    Placeholder adapter for real database / DuckDB integration.
-    Once Teammates 1 & 2 deliver their DuckDB file or Parquet tables,
-    this function executes the spatial-temporal SQL query.
+    Adapter for real database integration (PostgreSQL 18 / DuckDB).
+    Attempts query against PostgreSQL; if DB is unreachable or driver not installed,
+    gracefully falls back to the deterministic spatial grid stub.
     """
+    try:
+        from db import query_postgres_hotspots
+        pg_rows = query_postgres_hotspots(min_lon, min_lat, max_lon, max_lat, start_date, end_date)
+        if pg_rows is not None:
+            return pg_rows
+    except Exception:
+        pass
     return generate_stub_team_rows(min_lon, min_lat, max_lon, max_lat, start_date, end_date)
 
 

@@ -1,0 +1,78 @@
+services:
+  # ---------------------------------------------------------------------------
+  # 1. DATABASE: PostgreSQL 18 with Spatial & Temporal Indexing + Seed Mocks
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:18-alpine
+    container_name: nasa_hotspots_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hotspots_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./docker/postgres/02_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hotspots_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+    networks:
+      - hotspots_net
+
+  # ---------------------------------------------------------------------------
+  # 2. BACKEND: FastAPI Scientific Harmonization Engine
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nasa_hotspots_backend
+    restart: unless-stopped
+    environment:
+      PORT: 8000
+      PYTHONUNBUFFERED: "1"
+      DATA_SOURCE_MODE: ${DATA_SOURCE_MODE:-database}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-hotspots_db}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - hotspots_net
+
+  # ---------------------------------------------------------------------------
+  # 3. FRONTEND: React 18 + Leaflet + Modular Visualization Panel (Nginx)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nasa_hotspots_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - hotspots_net
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  hotspots_net:
+    driver: bridge

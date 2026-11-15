@@ -1,3 +1,4 @@
+import os
 from typing import Any, Optional, Literal
 from pydantic import BaseModel, Field
 
@@ -25,8 +26,10 @@ TEAM_FIELD_MAP: dict[str, str] = {
 # =====================================================================
 # DATA SOURCE SWITCH: 1-line switch to toggle between Disposable Stub
 # and Real Database/DuckDB adapter when Teammates finish data integration.
+# Can also be set dynamically via the DATA_SOURCE_MODE environment variable.
 # =====================================================================
-DATA_SOURCE_MODE: Literal["stub", "database"] = "stub"
+_env_mode = os.getenv("DATA_SOURCE_MODE", "stub").lower()
+DATA_SOURCE_MODE: Literal["stub", "database"] = "database" if _env_mode == "database" else "stub"
 
 
 class UnifiedHotspot(BaseModel):
