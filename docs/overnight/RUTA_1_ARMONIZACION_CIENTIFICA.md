@@ -3,7 +3,7 @@
 > **Rama de destino:** `overnight/ruta-1-armonizacion`  
 > **Worktree de ejecución:** `/tmp/overnight-worktrees/ruta-1`  
 > **Agente asignado:** `@coder-ruta1`  
-> **Enfoque arquitectónico:** Maximizar la armonización estadística MODIS/VIIRS para el desafío *Harmonization of MODIS and VIIRS Hot Spots (CONAE — NASA Space Apps 2026)*. Implementa modos de calibración científica (`'raw'`, `'area_weighted'` ponderado por `pixel_geom` $1.0\text{ km}^2$ vs $0.14\text{ km}^2$, y `'deduplicated'` que fusiona co-detecciones MODIS/VIIRS cercanas en tiempo y espacio), pesos de calibración por generación (`G1`–`G4`), matriz multianual de anomalías (**Burning Activity Calendar 2001–2026**) contra mediana histórica ($P_{50}$), y exportación CSV científica vía endpoint dedicado (`GET /api/aoi/export.csv`).
+> **Enfoque arquitectónico:** Maximizar la armonización estadística MODIS/VIIRS para el desafío *Harmonization of MODIS and VIIRS Hot Spots (CONAE — NASA Space Apps 2026)*. Implementa modos de calibración científica (`'raw'`, `'area_weighted'` ponderado por `pixel_geom` $1.0\text{ km}^2$ vs $0.14\text{ km}^2$, y `'deduplicated'` que fusiona co-detecciones MODIS/VIIRS cercanas en tiempo y espacio), pesos de calibración por generación (`G1`–`G4`), matriz multianual de anomalías (**Burning Activity Calendar 2012–2026**) contra mediana histórica ($P_{50}$), y exportación CSV científica vía endpoint dedicado (`GET /api/aoi/export.csv`).
 
 ---
 
@@ -24,11 +24,11 @@ PASOS DE IMPLEMENTACIÓN (BABY STEPS CON CONVENTIONAL COMMITS EN ESPAÑOL):
   Extender `backend/team_contract.py`, `backend/stubs/team_data_stub.py` y `backend/main.py` con:
   * Switch limpio de 1 sola línea (`DATA_SOURCE_MODE: Literal["stub", "database"] = "stub"`) en `backend/team_contract.py` (y `load_raw_team_rows`) para cambiar a la Base de Datos real cuando el otro equipo termine.
   * Motor de armonización científica configurable con 3 modos (`calibration_mode`: `'raw'`, `'area_weighted'` ponderado por `pixel_geom` 1km² vs 0.14km², y `'deduplicated'` que fusiona detecciones MODIS/VIIRS cercanas en tiempo y espacio con radio cilíndrico adaptativo).
-  * Filtrado por `start_date` / `end_date` y cálculo de matriz mensual/multianual (`calendar_cells`, 2001–2026) con mediana histórica (`historical_median`), porcentaje de anomalía (`anomaly_pct`) y severidad (`low`, `normal`, `elevated`, `extreme`).
+  * Filtrado por `start_date` / `end_date` y cálculo de matriz mensual/multianual (`calendar_cells`, 2012–2026) con mediana histórica (`historical_median`), porcentaje de anomalía (`anomaly_pct`) y severidad (`low`, `normal`, `elevated`, `extreme`).
   * Endpoint `GET /api/aoi/export.csv` en `backend/main.py` que devuelve un `StreamingResponse` / `Response` (`text/csv`) con todos los focos armonizados y sus pesos estadísticos.
 - Paso 2 (`feat(mapa): catalogo de 4 generaciones satelitales y huella real en metros`):
   * Crear `frontend/src/utils/satelliteGenerations.ts` con las 4 generaciones satelitales:
-    - `G1`: MODIS Terra/Aqua (`T`, `A`), 2000–2026, resolución 1000m (`radiusMeters: 1000`, halo violeta punteado `#7c3aed`, `zOrder: 1`).
+    - `G1`: MODIS Terra/Aqua (`T`, `A`), 2012–2026, resolución 1000m (`radiusMeters: 1000`, halo violeta punteado `#7c3aed`, `zOrder: 1`).
     - `G2`: VIIRS S-NPP (`N`), 2012–2026, resolución efectiva 750m (`radiusMeters: 750`, azul `#2563eb`, `zOrder: 2`).
     - `G3`: VIIRS NOAA-20 (`N20`), 2017–2026, resolución 375m (`radiusMeters: 375`, naranja `#ea580c`, `zOrder: 3`).
     - `G4`: VIIRS NOAA-21 (`N21`), 2023–2026, resolución 375m (`radiusMeters: 375`, rojo sólido `#dc2626`, `zOrder: 4`).
@@ -51,7 +51,7 @@ flowchart TD
     subgraph FRONTEND["Frontend React + TypeScript (Vite)"]
         SAT_CAT["src/utils/satelliteGenerations.ts<br/>(Catálogo G1 1000m, G2 750m, G3 375m, G4 375m)"]
         MAP["CenteredAoiMap.tsx<br/>(Modo 1: Armonizado | Modo 2: <Circle> en Metros G1->G4)"]
-        CAL["InteractiveCalendar.tsx<br/>(Matriz 2001-2026 + Selector Algoritmo + Export CSV)"]
+        CAL["InteractiveCalendar.tsx<br/>(Matriz 2012-2026 + Selector Algoritmo + Export CSV)"]
         PANEL["HotspotSidePanel.tsx<br/>(10 Campos Declarativos + SVG Anomalía + analysis_metrics)"]
         CLIENT["services/apiClient.ts<br/>(fetchAoi + buildExportCsvUrl)"]
     end
@@ -64,7 +64,7 @@ flowchart TD
     end
 
     subgraph DATA["Origen de Datos"]
-        STUB["backend/stubs/team_data_stub.py<br/>(Clústeres G1-G4 + Serie Histórica 2001-2026)"]
+        STUB["backend/stubs/team_data_stub.py<br/>(Clústeres G1-G4 + Serie Histórica 2012-2026)"]
         DB["Base de Datos Real / DuckDB / Parquet<br/>(Entregable Compañeros 1 y 2)"]
     end
 
@@ -100,7 +100,7 @@ sequenceDiagram
     TC->>TC: Traduce a UnifiedHotspot + aplica pesos pixel_geom (1km² vs 0.14km²) y CDF FRP
     TC-->>API: Hotspots armonizados + Matriz calendar_cells (Mediana P50 + Anomalía %)
     API-->>UI: Payload JSON Completo
-    UI->>U: Actualiza Mapa (G1->G4), Matriz 2001-2026 y Gráfico SVG vs. Mediana
+    UI->>U: Actualiza Mapa (G1->G4), Matriz 2012-2026 y Gráfico SVG vs. Mediana
 ```
 
 ---
@@ -149,14 +149,14 @@ Si además el equipo cambia algún nombre de columna al entregar su tabla final,
 
 | Generación | Códigos `satellite` | Misión / Sensor | Período Operativo | Resolución / Huella (`radiusMeters`) | Estilo Visual en Modo Huella (`<Circle>`) | `zOrder` |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **G1** | `"T"`, `"A"` | MODIS Terra / Aqua | 2000–2026 | `1000 m` (~$1.0\text{ km}^2$) | Halo violeta punteado (`#7c3aed`, `dashArray: "6 4"`, al fondo) | `1` (Fondo) |
+| **G1** | `"T"`, `"A"` | MODIS Terra / Aqua | 2012–2026 | `1000 m` (~$1.0\text{ km}^2$) | Halo violeta punteado (`#7c3aed`, `dashArray: "6 4"`, al fondo) | `1` (Fondo) |
 | **G2** | `"N"` | VIIRS S-NPP | 2012–2026 | `750 m` (transición) | Círculo azul (`#2563eb`, opacidad media) | `2` |
 | **G3** | `"N20"` | VIIRS NOAA-20 | 2017–2026 | `375 m` (~$0.14\text{ km}^2$) | Círculo naranja (`#ea580c`, opacidad media-alta) | `3` |
 | **G4** | `"N21"` | VIIRS NOAA-21 | 2023–2026 | `375 m` (~$0.14\text{ km}^2$) | Núcleo rojo sólido (`#dc2626`, máxima prioridad arriba) | `4` (Frente) |
 
 ### 4.2. Tres Algoritmos de Armonización en `backend/team_contract.py`
 1. **`raw` (Sin calibrar):** Cada detección cuenta como `1.0` y conserva su `frp` original, exhibiendo el salto artificial post-2012 por la entrada de VIIRS.
-2. **`area_weighted` (Ponderación por Área Instantánea `pixel_geom`):** Pondera cada foco por la razón de área respecto al píxel de referencia MODIS de $1.0\text{ km}^2$ ($w_i = (A_i / 1.0\text{ km}^2)^{\beta}$) y aplica calibración de cuantiles (CDF Matching) al `frp`, haciendo comparables las series 2001–2011 y 2012–2026.
+2. **`area_weighted` (Ponderación por Área Instantánea `pixel_geom`):** Pondera cada foco por la razón de área respecto al píxel de referencia MODIS de $1.0\text{ km}^2$ ($w_i = (A_i / 1.0\text{ km}^2)^{\beta}$) y aplica calibración de cuantiles (CDF Matching) al `frp`, haciendo comparables las series MODIS y VIIRS en el período 2012–2026.
 3. **`deduplicated` (Deduplicación Espacio-Temporal Cilíndrica):** Agrupa co-detecciones situadas a menos de $r_{\text{dedup}} \approx 1.0\text{ km}$ y dentro de la misma ventana temporal ($\Delta t \le 6\text{ h}$), fusionándolas en un foco representativo sin doble conteo de energía radiativa.
 
 ### 4.3. Exportación CSV Científica (`GET /api/aoi/export.csv`)
