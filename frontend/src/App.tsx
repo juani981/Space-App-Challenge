@@ -56,10 +56,9 @@ export default function App() {
     [bounds, startDate, endDate, calibrationMode]
   );
 
-  // Initial load
   useEffect(() => {
     executeQuery();
-  }, []); // Run once on mount
+  }, []);
 
   const handleDateRangeChange = (newStart: string, newEnd: string) => {
     setStartDate(newStart);
@@ -135,11 +134,12 @@ export default function App() {
         </div>
       </div>
 
-      {/* RIGHT BLOCK: Point Inspector + Interactive Activity Calendar + Harmonization Analytics */}
+      {/* RIGHT BLOCK: Point Inspector + Interactive Activity Calendar + Pluggable Visualization Modules */}
       <div style={{ height: '100%', overflowY: 'auto', minWidth: 0 }}>
         <HotspotSidePanel
           status={status}
           totalHotspots={backendData?.hotspots.length ?? 0}
+          hotspots={backendData?.hotspots ?? []}
           selectedHotspot={selectedHotspot}
           bounds={bounds}
           calendarCells={backendData?.calendar_cells ?? []}
