@@ -32,14 +32,14 @@ export interface CenteredAoiMapProps {
  */
 function ViewportAndGeolocationController({
   onBoundsChange,
-  onUserLocationFound,
+  onVisualCenterChange,
   onGeoError,
   locateTrigger,
   isPickingLocation,
   onLocationPicked,
 }: {
   onBoundsChange: (bounds: AoiBounds) => void;
-  onUserLocationFound: (coords: [number, number]) => void;
+  onVisualCenterChange: (coords: [number, number]) => void;
   onGeoError: () => void;
   locateTrigger: number;
   isPickingLocation: boolean;
@@ -50,13 +50,13 @@ function ViewportAndGeolocationController({
   // Keep latest callbacks in refs so effects never re-run due to parent re-renders
   const callbacksRef = useRef({
     onBoundsChange,
-    onUserLocationFound,
+    onVisualCenterChange,
     onGeoError,
     onLocationPicked,
   });
   callbacksRef.current = {
     onBoundsChange,
-    onUserLocationFound,
+    onVisualCenterChange,
     onGeoError,
     onLocationPicked,
   };
@@ -65,9 +65,21 @@ function ViewportAndGeolocationController({
   const lastHandledTrigger = useRef(0);
   const lastBoundsKey = useRef('');
 
+  const syncVisualCenter = useCallback(() => {
+    const size = map.getSize();
+    if (size.x === 0 || size.y === 0) return;
+    const c = map.getCenter();
+    callbacksRef.current.onVisualCenterChange([
+      Number(c.lat.toFixed(4)),
+      Number(c.lng.toFixed(4)),
+    ]);
+  }, [map]);
+
   const emitViewportBounds = useCallback(() => {
     const size = map.getSize();
     if (size.x === 0 || size.y === 0) return;
+
+    syncVisualCenter();
 
     const b = map.getBounds();
     const sw = b.getSouthWest();
@@ -84,7 +96,7 @@ function ViewportAndGeolocationController({
     lastBoundsKey.current = key;
 
     callbacksRef.current.onBoundsChange(nextBounds);
-  }, [map]);
+  }, [map, syncVisualCenter]);
 
   const centerMapAccurately = useCallback(
     (lat: number, lon: number, targetZoom = 8) => {
@@ -112,7 +124,7 @@ function ViewportAndGeolocationController({
       const handleSuccess = (pos: GeolocationPosition) => {
         const lat = Number(pos.coords.latitude.toFixed(4));
         const lon = Number(pos.coords.longitude.toFixed(4));
-        callbacksRef.current.onUserLocationFound([lat, lon]);
+        callbacksRef.current.onVisualCenterChange([lat, lon]);
         centerMapAccurately(lat, lon, 8);
       };
 
@@ -187,6 +199,7 @@ function ViewportAndGeolocationController({
   }, [map, isPickingLocation]);
 
   useMapEvents({
+    move: syncVisualCenter,
     moveend: emitViewportBounds,
     zoomend: emitViewportBounds,
     resize: emitViewportBounds,
@@ -209,21 +222,15 @@ export function CenteredAoiMap({
   selectedHotspot = null,
   onSelectHotspot,
   renderMode: controlledMode,
-  onRenderModeChange,
 }: CenteredAoiMapProps) {
   const { t } = useLanguage();
-  const [internalMode, setInternalMode] = useState<MapRenderMode>('harmonized');
-  const [userCoords, setUserCoords] = useState<[number, number] | null>(null);
+  const [internalMode] = useState<MapRenderMode>('harmonized');
+  const [visualCenter, setVisualCenter] = useState<[number, number]>([-32.0, -61.5]);
   const [locateTrigger, setLocateTrigger] = useState<number>(0);
   const [isPickingLocation, setIsPickingLocation] = useState<boolean>(false);
   const [geoHasError, setGeoHasError] = useState<boolean>(false);
 
   const activeMode = controlledMode ?? internalMode;
-
-  const handleModeChange = (mode: MapRenderMode) => {
-    setInternalMode(mode);
-    onRenderModeChange?.(mode);
-  };
 
   // In footprint mode, sort by zOrder (G1 at bottom -> G4 on top)
   const orderedHotspots = activeMode === 'footprint'
@@ -258,39 +265,16 @@ export function CenteredAoiMap({
         />
         <ViewportAndGeolocationController
           onBoundsChange={onBoundsChange}
-          onUserLocationFound={(coords) => {
-            setUserCoords(coords);
-            setGeoHasError(false);
-          }}
+          onVisualCenterChange={setVisualCenter}
           onGeoError={() => setGeoHasError(true)}
           locateTrigger={locateTrigger}
           isPickingLocation={isPickingLocation}
           onLocationPicked={(coords) => {
-            setUserCoords(coords);
+            setVisualCenter(coords);
             setIsPickingLocation(false);
             setGeoHasError(false);
           }}
         />
-
-        {/* USER LOCATION MARKER (centered via GPS or manual pick) */}
-        {userCoords && (
-          <CircleMarker
-            center={userCoords}
-            radius={9}
-            pathOptions={{
-              color: '#ffffff',
-              fillColor: '#0284c7',
-              fillOpacity: 0.95,
-              weight: 3,
-            }}
-          >
-            <Tooltip direction="top" offset={[0, -8]} opacity={0.95} permanent>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1' }}>
-                📍 {t.userLocationTooltip}: {userCoords[0].toFixed(4)}°, {userCoords[1].toFixed(4)}°
-              </div>
-            </Tooltip>
-          </CircleMarker>
-        )}
 
         {/* ASYNCHRONOUSLY LAZY-LOADED HOTSPOT RENDERING LAYER */}
         {orderedHotspots.map((hs, idx) => {
@@ -382,6 +366,44 @@ export function CenteredAoiMap({
         })}
       </MapContainer>
 
+      {/* Fixed Visual Center Reticle (always locked to the true visual center of the viewport) */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          pointerEvents: 'none',
+          zIndex: 999,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+        }}
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="5" stroke="#0284c7" strokeWidth="2" fill="rgba(2, 132, 199, 0.18)" />
+          <circle cx="12" cy="12" r="1.5" fill="#0284c7" />
+          <line x1="12" y1="2" x2="12" y2="6" stroke="#0284c7" strokeWidth="1.5" />
+          <line x1="12" y1="18" x2="12" y2="22" stroke="#0284c7" strokeWidth="1.5" />
+          <line x1="2" y1="12" x2="6" y2="12" stroke="#0284c7" strokeWidth="1.5" />
+          <line x1="18" y1="12" x2="22" y2="12" stroke="#0284c7" strokeWidth="1.5" />
+        </svg>
+        <div
+          style={{
+            marginTop: '2px',
+            background: 'rgba(15, 23, 42, 0.78)',
+            color: '#f8fafc',
+            fontSize: '10px',
+            fontFamily: 'monospace',
+            padding: '1px 6px',
+            borderRadius: '4px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {visualCenter[0].toFixed(4)}°, {visualCenter[1].toFixed(4)}°
+        </div>
+      </div>
+
       {/* Bottom-Right Conventional Map Controls (GPS Locate & Drop-Pin) */}
       <div
         style={{
@@ -463,7 +485,7 @@ export function CenteredAoiMap({
               alignItems: 'center',
               justifyContent: 'center',
               background: '#ffffff',
-              color: userCoords ? '#0284c7' : '#334155',
+              color: '#0284c7',
               border: 'none',
               borderBottom: '1px solid #e2e8f0',
               cursor: 'pointer',
