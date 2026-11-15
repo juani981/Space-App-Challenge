@@ -5,9 +5,27 @@ export interface AoiBounds {
   maxLat: number;
 }
 
+/**
+ * Mirrors `UnifiedHotspot` in `backend/team_contract.py` and `docs/TEAM_DATA_CONTRACT.md` (10 concepts).
+ */
+export interface UnifiedHotspot {
+  datetime_utc: string;
+  satellite: string;
+  lat: number;
+  lon: number;
+  temp_1: number | null;
+  temp_2: number | null;
+  pixel_geom: number | null;
+  frp: number;
+  confidence: string;
+  fire_type: number | null;
+  day_night: string | null;
+}
+
 export interface AoiResponse {
   bounds: [number, number, number, number];
   message: string;
+  hotspots: UnifiedHotspot[];
 }
 
 /**

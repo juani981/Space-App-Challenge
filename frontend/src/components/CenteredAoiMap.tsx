@@ -1,10 +1,12 @@
 import { useCallback, useEffect } from 'react';
-import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet';
-import type { AoiBounds } from '../services/apiClient';
+import { CircleMarker, MapContainer, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import type { AoiBounds, UnifiedHotspot } from '../services/apiClient';
 
 export interface CenteredAoiMapProps {
   /** Callback fired whenever the map is dragged or zoomed underneath the centered box */
   onBoundsChange: (bounds: AoiBounds) => void;
+  /** Harmonized hotspots returned by the backend to display inside the AOI */
+  hotspots?: UnifiedHotspot[];
   /** Fraction of the map viewport width/height occupied by the centered orange box (0.1 to 0.9) */
   boxRatio?: number;
 }
@@ -43,12 +45,10 @@ function ViewportBoxTracker({
     });
   }, [map, boxRatio, onBoundsChange]);
 
-  // Compute initial bounds as soon as the map mounts
   useEffect(() => {
     syncBoundsFromCenterBox();
   }, [syncBoundsFromCenterBox]);
 
-  // Recompute continuously as the user drags or zooms the map underneath the box
   useMapEvents({
     move: syncBoundsFromCenterBox,
     zoom: syncBoundsFromCenterBox,
@@ -59,10 +59,14 @@ function ViewportBoxTracker({
 }
 
 /**
- * SRP & OCP: Self-contained map component with a fixed, centered orange AOI reticle.
- * Dragging or zooming the map moves the world underneath the centered orange box.
+ * SRP & OCP: Self-contained map component with a fixed, centered orange AOI reticle
+ * and optional hotspot markers inside the queried region.
  */
-export function CenteredAoiMap({ onBoundsChange, boxRatio = 0.5 }: CenteredAoiMapProps) {
+export function CenteredAoiMap({
+  onBoundsChange,
+  hotspots = [],
+  boxRatio = 0.5,
+}: CenteredAoiMapProps) {
   const offsetPct = ((1 - boxRatio) / 2) * 100;
   const sizePct = boxRatio * 100;
 
@@ -74,6 +78,30 @@ export function CenteredAoiMap({ onBoundsChange, boxRatio = 0.5 }: CenteredAoiMa
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <ViewportBoxTracker boxRatio={boxRatio} onBoundsChange={onBoundsChange} />
+
+        {hotspots.map((hs, idx) => (
+          <CircleMarker
+            key={`${hs.datetime_utc}-${hs.lat}-${hs.lon}-${idx}`}
+            center={[hs.lat, hs.lon]}
+            radius={6}
+            pathOptions={{
+              color: '#991b1b',
+              fillColor: '#ef4444',
+              fillOpacity: 0.85,
+              weight: 1.5,
+            }}
+          >
+            <Popup>
+              <div style={{ fontSize: '12px', lineHeight: 1.4 }}>
+                <strong>Satellite:</strong> {hs.satellite} ({hs.day_night})<br />
+                <strong>UTC:</strong> {hs.datetime_utc}<br />
+                <strong>FRP:</strong> {hs.frp} MW<br />
+                <strong>Confidence:</strong> {hs.confidence}<br />
+                <strong>Coords:</strong> {hs.lat}, {hs.lon}
+              </div>
+            </Popup>
+          </CircleMarker>
+        ))}
       </MapContainer>
 
       {/* Fixed Centered Orange AOI Box Overlay (pointerEvents: 'none' lets map drag freely underneath) */}
@@ -94,7 +122,6 @@ export function CenteredAoiMap({ onBoundsChange, boxRatio = 0.5 }: CenteredAoiMa
           justifyContent: 'center',
         }}
       >
-        {/* Center crosshair dot */}
         <div
           style={{
             width: '8px',

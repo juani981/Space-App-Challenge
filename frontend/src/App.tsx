@@ -17,7 +17,7 @@ export default function App() {
     try {
       const res = await fetchAoi(bounds);
       setBackendData(res);
-      setStatus('Connected to Backend');
+      setStatus(`Connected — ${res.hotspots.length} stub hotspots loaded`);
     } catch (err) {
       setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -62,19 +62,22 @@ export default function App() {
         </div>
 
         <div style={{ flex: 1 }}>
-          <CenteredAoiMap onBoundsChange={setBounds} />
+          <CenteredAoiMap
+            onBoundsChange={setBounds}
+            hotspots={backendData?.hotspots}
+          />
         </div>
       </div>
 
       {/* RIGHT BLOCK: Backend Response & Future Calendar Slot */}
-      <div style={{ padding: '20px', borderLeft: '1px solid #cbd5e1', background: '#f8fafc' }}>
+      <div style={{ padding: '20px', borderLeft: '1px solid #cbd5e1', background: '#f8fafc', overflowY: 'auto' }}>
         <h3 style={{ marginTop: 0 }}>Backend Interface Panel</h3>
         <p style={{ fontSize: '14px' }}>
           <strong>Status:</strong> {status}
         </p>
 
         <h4>Response from FastAPI (<code>/api/aoi</code>):</h4>
-        <pre style={{ background: '#0f172a', color: '#38bdf8', padding: '12px', borderRadius: '6px', overflowX: 'auto' }}>
+        <pre style={{ background: '#0f172a', color: '#38bdf8', padding: '12px', borderRadius: '6px', overflowX: 'auto', maxHeight: '340px' }}>
           {backendData ? JSON.stringify(backendData, null, 2) : '// No request sent yet'}
         </pre>
 
