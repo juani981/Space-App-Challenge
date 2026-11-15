@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CenteredAoiMap, type MapRenderMode } from './components/CenteredAoiMap';
 import { HotspotSidePanel } from './components/HotspotSidePanel';
 import {
@@ -9,6 +9,12 @@ import {
   type UnifiedHotspot,
 } from './services/apiClient';
 import { LanguageProvider, useLanguage } from './i18n/LanguageContext';
+
+const MAX_CACHED_WORLD_POINTS = 2500;
+
+function hotspotKey(hs: UnifiedHotspot): string {
+  return `${hs.datetime_utc}|${hs.lat.toFixed(4)}|${hs.lon.toFixed(4)}|${hs.satellite}`;
+}
 
 function AppContent() {
   const { t } = useLanguage();
@@ -26,9 +32,12 @@ function AppContent() {
   const [mapRenderMode, setMapRenderMode] = useState<MapRenderMode>('harmonized');
 
   const [backendData, setBackendData] = useState<AoiResponse | null>(null);
+  const [worldHotspots, setWorldHotspots] = useState<UnifiedHotspot[]>([]);
   const [selectedHotspot, setSelectedHotspot] = useState<UnifiedHotspot | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const executeQuery = useCallback(
     async (
@@ -36,7 +45,14 @@ function AppContent() {
       start = startDate,
       end = endDate,
       calMode = calibrationMode,
+      resetWorldCache = false,
     ) => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       setIsLoading(true);
       setErrorMsg(null);
       try {
@@ -44,31 +60,61 @@ function AppContent() {
           startDate: start,
           endDate: end,
           calibrationMode: calMode,
+          signal: controller.signal,
         });
         setBackendData(res);
-        setSelectedHotspot(res.hotspots[0] ?? null);
+
+        // Merge newly lazy-loaded viewport hotspots into the progressive world map cache
+        setWorldHotspots((prev) => {
+          const base = resetWorldCache ? [] : prev;
+          const map = new Map<string, UnifiedHotspot>();
+          for (const item of base) {
+            map.set(hotspotKey(item), item);
+          }
+          for (const item of res.hotspots) {
+            map.set(hotspotKey(item), item);
+          }
+          const merged = Array.from(map.values());
+          if (merged.length > MAX_CACHED_WORLD_POINTS) {
+            return merged.slice(merged.length - MAX_CACHED_WORLD_POINTS);
+          }
+          return merged;
+        });
+
+        setSelectedHotspot((prev) => prev ?? res.hotspots[0] ?? null);
       } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          return;
+        }
         setErrorMsg(err instanceof Error ? err.message : String(err));
       } finally {
-        setIsLoading(false);
+        if (abortControllerRef.current === controller) {
+          setIsLoading(false);
+        }
       }
     },
     [bounds, startDate, endDate, calibrationMode]
   );
 
+  // Automatic debounced lazy-loading whenever the user pans/zooms the map viewport
   useEffect(() => {
-    executeQuery();
-  }, []);
+    const timer = window.setTimeout(() => {
+      executeQuery(bounds, startDate, endDate, calibrationMode, false);
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [bounds]);
 
   const handleDateRangeChange = (newStart: string, newEnd: string) => {
     setStartDate(newStart);
     setEndDate(newEnd);
-    executeQuery(bounds, newStart, newEnd, calibrationMode);
+    setSelectedHotspot(null);
+    executeQuery(bounds, newStart, newEnd, calibrationMode, true);
   };
 
   const handleCalibrationModeChange = (newMode: CalibrationMode) => {
     setCalibrationMode(newMode);
-    executeQuery(bounds, startDate, endDate, newMode);
+    setSelectedHotspot(null);
+    executeQuery(bounds, startDate, endDate, newMode, true);
   };
 
   const localizedStatus = isLoading
@@ -81,7 +127,7 @@ function AppContent() {
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1.9fr 1.1fr', height: '100vh', width: '100vw', overflow: 'hidden' }}>
-      {/* LEFT BLOCK: Centered-Box Map + Live Coordinate & Mode Bar */}
+      {/* LEFT BLOCK: Full-Viewport Lazy-Loaded World Map + Live Coordinate & Mode Bar */}
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0 }}>
         <div
           style={{
@@ -109,7 +155,7 @@ function AppContent() {
           </span>
 
           <button
-            onClick={() => executeQuery()}
+            onClick={() => executeQuery(bounds, startDate, endDate, calibrationMode, false)}
             disabled={isLoading}
             style={{
               padding: '5px 12px',
@@ -125,6 +171,19 @@ function AppContent() {
             {isLoading ? t.loadingBtn : t.queryAoiBtn}
           </button>
 
+          <span
+            style={{
+              fontSize: '11px',
+              background: '#0f172a',
+              color: '#38bdf8',
+              padding: '3px 8px',
+              borderRadius: '999px',
+              fontWeight: 600,
+            }}
+          >
+            {backendData?.hotspots.length ?? 0} {t.inViewportBadge} · {worldHotspots.length} {t.accumulatedBadge}
+          </span>
+
           <span style={{ fontSize: '11px', opacity: 0.85 }}>
             {t.calibrationLabel} <strong>{t.calModeShort[calibrationMode]}</strong> | {t.mapViewLabel} <strong>{t.mapModeShort[mapRenderMode]}</strong>
           </span>
@@ -133,7 +192,7 @@ function AppContent() {
         <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
           <CenteredAoiMap
             onBoundsChange={setBounds}
-            hotspots={backendData?.hotspots}
+            hotspots={worldHotspots}
             selectedHotspot={selectedHotspot}
             onSelectHotspot={setSelectedHotspot}
             renderMode={mapRenderMode}
@@ -156,7 +215,7 @@ function AppContent() {
           calibrationMode={calibrationMode}
           onDateRangeChange={handleDateRangeChange}
           onCalibrationModeChange={handleCalibrationModeChange}
-          onRefresh={() => executeQuery()}
+          onRefresh={() => executeQuery(bounds, startDate, endDate, calibrationMode, false)}
           isLoading={isLoading}
         />
       </div>

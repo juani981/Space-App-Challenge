@@ -13,17 +13,22 @@ export function resolveText(text: LocalizedText | undefined, lang: Language): st
 export const TRANSLATIONS = {
   es: {
     // Top Bar & Global Status
-    aoiCenteredLabel: 'AOI Centrada ( Marco de Muestreo ):',
-    queryAoiBtn: 'Consultar AOI',
-    loadingBtn: 'Procesando...',
+    aoiCenteredLabel: 'Ventana Geográfica Activa (Lazy-Loading):',
+    queryAoiBtn: 'Recargar Vista',
+    loadingBtn: 'Sincronizando...',
+    locateMeBtn: '📍 Mi Ubicación',
+    locatingStatus: 'Solicitando permiso de geolocalización del navegador...',
+    userLocationTooltip: 'Tu ubicación actual (GPS / Navegador)',
+    accumulatedBadge: 'acumulados en mapa',
+    inViewportBadge: 'en vista actual',
     calibrationLabel: 'Algoritmo:',
     mapViewLabel: 'Modo Cartográfico:',
-    statusIdle: 'Inactivo — Pulsa "Consultar AOI" o desplaza el visor geográfico',
-    statusQuerying: 'Consultando telemetría satelital y aplicando armonización radiométrica...',
-    statusConnectedPrefix: 'Conectado',
+    statusIdle: 'Desplaza o haz zoom en el mapa para cargar focos asíncronamente',
+    statusQuerying: 'Carga perezosa (Lazy-Loading) de telemetría satelital en la ventana visible...',
+    statusConnectedPrefix: 'Sincronizado',
     statusModeLabel: 'Calibración',
     statusSourceLabel: 'Fuente',
-    hotspotsInAoiSuffix: 'focos térmicos armonizados en el AOI',
+    hotspotsInAoiSuffix: 'focos térmicos en la ventana visible',
 
     // Calibration Mode Short Names
     calModeShort: {
@@ -103,17 +108,22 @@ export const TRANSLATIONS = {
 
   en: {
     // Top Bar & Global Status
-    aoiCenteredLabel: 'Centered AOI (Sampling Frame):',
-    queryAoiBtn: 'Query AOI',
-    loadingBtn: 'Processing...',
+    aoiCenteredLabel: 'Active Viewport Bounds (Lazy-Loading):',
+    queryAoiBtn: 'Reload View',
+    loadingBtn: 'Syncing...',
+    locateMeBtn: '📍 My Location',
+    locatingStatus: 'Requesting browser geolocation permission...',
+    userLocationTooltip: 'Your current location (GPS / Browser)',
+    accumulatedBadge: 'cached on map',
+    inViewportBadge: 'in active view',
     calibrationLabel: 'Algorithm:',
     mapViewLabel: 'Cartographic Mode:',
-    statusIdle: 'Idle — Click "Query AOI" or pan the geographic viewfinder',
-    statusQuerying: 'Querying satellite telemetry and applying radiometric harmonization...',
-    statusConnectedPrefix: 'Connected',
+    statusIdle: 'Pan or zoom the map to asynchronously lazy-load hotspots',
+    statusQuerying: 'Asynchronously lazy-loading satellite telemetry for visible viewport...',
+    statusConnectedPrefix: 'Synchronized',
     statusModeLabel: 'Calibration',
     statusSourceLabel: 'Source',
-    hotspotsInAoiSuffix: 'harmonized thermal hotspots in AOI',
+    hotspotsInAoiSuffix: 'thermal hotspots in visible viewport',
 
     // Calibration Mode Short Names
     calModeShort: {

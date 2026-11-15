@@ -57,6 +57,7 @@ export interface QueryAoiOptions {
   startDate?: string;
   endDate?: string;
   calibrationMode?: CalibrationMode;
+  signal?: AbortSignal;
 }
 
 /**
@@ -78,7 +79,9 @@ export async function fetchAoi(
   if (options?.endDate) params.set('end_date', options.endDate);
   if (options?.calibrationMode) params.set('calibration_mode', options.calibrationMode);
 
-  const response = await fetch(`/api/aoi?${params.toString()}`);
+  const response = await fetch(`/api/aoi?${params.toString()}`, {
+    signal: options?.signal,
+  });
   if (!response.ok) {
     throw new Error(`Backend error: ${response.status}`);
   }

@@ -3,13 +3,13 @@ DISPOSABLE STUB MODULE — CAN BE REPLACED ONCE TEAMMATES DELIVER REAL DUCKDB / 
 
 Simulates raw records returned by Teammates 1 & 2's hypothetical dataset/API
 inside a requested bounding box, using the provisional keys from `TEAM_FIELD_MAP`.
-Includes multi-decadal historical simulations (2001–2026) with realistic seasonality
-and satellite generation timelines (G1 MODIS -> G4 NOAA-21).
+Uses a deterministic spatial tile grid so that panning/zooming across the world map
+lazy-loads new points seamlessly while keeping existing points anchored at fixed coordinates.
 """
 
 import hashlib
+import math
 import random
-from datetime import datetime
 from typing import Any, Optional
 from team_contract import TEAM_FIELD_MAP, DATA_SOURCE_MODE, parse_team_record, UnifiedHotspot
 from harmonization import (
@@ -33,7 +33,7 @@ def get_hotspot_dataset(
 ) -> dict[str, Any]:
     """
     Unified ingestion gateway that checks DATA_SOURCE_MODE:
-    - If 'stub': Generates rich deterministic multi-temporal records from the stub engine.
+    - If 'stub': Generates deterministic spatial-tile multi-temporal records from the stub engine.
     - If 'database': Invokes the team database / DuckDB connector.
     Then applies the selected scientific harmonization algorithm and builds calendar cells.
     """
@@ -86,7 +86,6 @@ def _filter_by_date_range(
     end_date: Optional[str],
 ) -> list[UnifiedHotspot]:
     if not start_date and not end_date:
-        # Default to 2024 year for focused active map display
         start_date = "2024-01-01"
         end_date = "2024-12-31"
 
@@ -114,8 +113,6 @@ def _query_database(
     Once Teammates 1 & 2 deliver their DuckDB file or Parquet tables,
     this function executes the spatial-temporal SQL query.
     """
-    # For now, if someone toggles DATA_SOURCE_MODE="database", fallback gracefully to stub data
-    # with a tag to prevent runtime crashes.
     return generate_stub_team_rows(min_lon, min_lat, max_lon, max_lat, start_date, end_date)
 
 
@@ -128,111 +125,144 @@ def generate_stub_team_rows(
     end_date: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     """
-    Produces deterministic, realistic multi-year raw rows inside [min_lon, min_lat, max_lon, max_lat]
-    structured with the exact keys defined in TEAM_FIELD_MAP.
-    Simulates South American fire seasonality (peak in August-October) and multi-satellite
-    deployment epochs (2000 MODIS -> 2012 S-NPP -> 2017 NOAA-20 -> 2023 NOAA-21).
+    Produces deterministic, spatially anchored multi-year raw rows inside [min_lon, min_lat, max_lon, max_lat]
+    by dividing the viewport into fixed geographic grid cells.
+    When the user pans across the world map, existing points stay at their exact (lat, lon) coordinates
+    while newly exposed grid cells lazy-load seamlessly.
     """
-    seed_str = f"{min_lon:.2f},{min_lat:.2f},{max_lon:.2f},{max_lat:.2f}"
-    seed = int(hashlib.md5(seed_str.encode("utf-8")).hexdigest()[:8], 16)
-    rng = random.Random(seed)
+    if min_lon > max_lon:
+        min_lon, max_lon = max_lon, min_lon
+    if min_lat > max_lat:
+        min_lat, max_lat = max_lat, min_lat
+
+    lon_span = max(0.05, max_lon - min_lon)
+    lat_span = max(0.05, max_lat - min_lat)
+
+    # Choose a fixed spatial grid resolution (2.0 deg for regional/continental, 0.5 deg for local zoom)
+    if max(lon_span, lat_span) <= 2.5:
+        grid_step = 0.5
+    elif max(lon_span, lat_span) <= 14.0:
+        grid_step = 2.0
+    else:
+        grid_step = 6.0
+
+    start_gx = int(math.floor(min_lon / grid_step))
+    end_gx = int(math.floor(max_lon / grid_step))
+    start_gy = int(math.floor(min_lat / grid_step))
+    end_gy = int(math.floor(max_lat / grid_step))
+
+    tiles: list[tuple[int, int]] = []
+    for gx in range(start_gx, end_gx + 1):
+        for gy in range(start_gy, end_gy + 1):
+            tiles.append((gx, gy))
+
+    # Cap maximum evaluated tiles to keep response under 40ms even at global zoom
+    if len(tiles) > 16:
+        stride = max(1, len(tiles) // 16)
+        tiles = tiles[::stride][:16]
 
     m = TEAM_FIELD_MAP
     confidences = ["low", "nominal", "high"]
     day_nights = ["D", "N"]
 
-    # Monthly baseline weights (reflecting South American fire season: peak in Aug/Sep/Oct)
     monthly_weights = {
-        1: 2, 2: 2, 3: 3, 4: 4, 5: 6, 6: 10,
-        7: 18, 8: 35, 9: 45, 10: 25, 11: 8, 12: 3,
+        1: 2, 2: 2, 3: 3, 4: 4, 5: 6, 6: 8,
+        7: 14, 8: 28, 9: 36, 10: 20, 11: 6, 12: 3,
     }
 
-    # Annual anomaly multipliers (e.g. 2020 extreme fire season, 2024 elevated)
     year_multipliers = {
-        2020: 2.2,  # Record fires in Pantanal & Chaco
-        2024: 1.8,  # Current elevated anomaly season
-        2013: 0.5,  # Low fire season
+        2020: 2.2,
+        2024: 1.8,
+        2013: 0.5,
         2017: 1.3,
     }
 
     raw_rows: list[dict[str, Any]] = []
+    tile_density_scale = max(1, len(tiles))
 
-    # Generate synthetic history across 2001–2026
-    for year in range(2001, 2027):
-        y_mult = year_multipliers.get(year, 1.0)
+    for gx, gy in tiles:
+        tile_min_lon = gx * grid_step
+        tile_max_lon = (gx + 1) * grid_step
+        tile_min_lat = gy * grid_step
+        tile_max_lat = (gy + 1) * grid_step
 
-        # Available satellites based on operational launch dates
-        available_sats = ["T", "A"]  # MODIS Terra & Aqua (2000-present)
-        if year >= 2012:
-            available_sats.append("N")  # VIIRS S-NPP
-        if year >= 2017:
-            available_sats.append("N20")  # VIIRS NOAA-20
-        if year >= 2023:
-            available_sats.append("N21")  # VIIRS NOAA-21
+        seed_str = f"tile:{grid_step:.2f}:{gx}:{gy}"
+        seed = int(hashlib.md5(seed_str.encode("utf-8")).hexdigest()[:8], 16)
+        rng = random.Random(seed)
 
-        for month in range(1, 13):
-            base_count = monthly_weights[month]
-            count = int(base_count * y_mult * rng.uniform(0.7, 1.3) * 0.4)
-            # Ensure at least some fires in peak months
-            if month in (8, 9) and count < 3:
-                count = 4
+        for year in range(2001, 2027):
+            y_mult = year_multipliers.get(year, 1.0)
 
-            for _ in range(count):
-                sat = rng.choice(available_sats)
-                # Assign sensor-specific pixel footprints
-                if sat in ("T", "A"):
-                    pixel_geom = FOOTPRINT_MODIS_KM2
-                elif sat == "N":
-                    pixel_geom = FOOTPRINT_VIIRS_750M_KM2
-                else:
-                    pixel_geom = FOOTPRINT_VIIRS_375M_KM2
+            available_sats = ["T", "A"]
+            if year >= 2012:
+                available_sats.append("N")
+            if year >= 2017:
+                available_sats.append("N20")
+            if year >= 2023:
+                available_sats.append("N21")
 
-                lat = round(rng.uniform(min_lat, max_lat), 4)
-                lon = round(rng.uniform(min_lon, max_lon), 4)
-                day = rng.randint(1, 28)
-                hour = rng.randint(0, 23)
-                minute = rng.randint(0, 59)
-                frp = round(rng.uniform(10.0, 160.0) * (0.8 if sat in ("N20", "N21") else 1.2), 1)
+            for month in range(1, 13):
+                base_count = monthly_weights[month]
+                count = int(round((base_count * y_mult * rng.uniform(0.7, 1.3) * 0.45) / math.sqrt(tile_density_scale)))
+                if month in (8, 9) and count < 1:
+                    count = 1
 
-                raw_rows.append(
-                    {
-                        m["datetime_utc"]: f"{year}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00Z",
-                        m["satellite"]: sat,
-                        m["lat"]: lat,
-                        m["lon"]: lon,
-                        m["temp_1"]: round(rng.uniform(310.0, 375.0), 1),
-                        m["temp_2"]: round(rng.uniform(285.0, 315.0), 1),
-                        m["pixel_geom"]: pixel_geom,
-                        m["frp"]: frp,
-                        m["confidence"]: rng.choice(confidences),
-                        m["fire_type"]: 0,
-                        m["day_night"]: rng.choice(day_nights),
-                    }
-                )
+                for _ in range(count):
+                    sat = rng.choice(available_sats)
+                    if sat in ("T", "A"):
+                        pixel_geom = FOOTPRINT_MODIS_KM2
+                    elif sat == "N":
+                        pixel_geom = FOOTPRINT_VIIRS_750M_KM2
+                    else:
+                        pixel_geom = FOOTPRINT_VIIRS_375M_KM2
 
-                # For 2024 August & September, deliberately inject nearby overlapping passes
-                # to demonstrate multi-satellite spatial-temporal deduplication!
-                if year == 2024 and month in (8, 9) and rng.random() < 0.35 and len(available_sats) > 2:
-                    paired_sat = "N20" if sat != "N20" else "T"
-                    paired_geom = FOOTPRINT_VIIRS_375M_KM2 if paired_sat == "N20" else FOOTPRINT_MODIS_KM2
-                    offset_lat = lat + rng.uniform(-0.008, 0.008)
-                    offset_lon = lon + rng.uniform(-0.008, 0.008)
-                    offset_hour = (hour + rng.randint(1, 3)) % 24
+                    lat = round(rng.uniform(tile_min_lat, tile_max_lat), 4)
+                    lon = round(rng.uniform(tile_min_lon, tile_max_lon), 4)
+                    day = rng.randint(1, 28)
+                    hour = rng.randint(0, 23)
+                    minute = rng.randint(0, 59)
+                    frp = round(rng.uniform(10.0, 160.0) * (0.8 if sat in ("N20", "N21") else 1.2), 1)
 
-                    raw_rows.append(
-                        {
-                            m["datetime_utc"]: f"{year}-{month:02d}-{day:02d}T{offset_hour:02d}:{minute:02d}:00Z",
-                            m["satellite"]: paired_sat,
-                            m["lat"]: round(offset_lat, 4),
-                            m["lon"]: round(offset_lon, 4),
-                            m["temp_1"]: round(rng.uniform(320.0, 380.0), 1),
-                            m["temp_2"]: round(rng.uniform(290.0, 320.0), 1),
-                            m["pixel_geom"]: paired_geom,
-                            m["frp"]: round(frp * rng.uniform(0.85, 1.15), 1),
-                            m["confidence"]: "high",
-                            m["fire_type"]: 0,
-                            m["day_night"]: "D" if 10 <= offset_hour <= 18 else "N",
-                        }
-                    )
+                    if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
+                        raw_rows.append(
+                            {
+                                m["datetime_utc"]: f"{year}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00Z",
+                                m["satellite"]: sat,
+                                m["lat"]: lat,
+                                m["lon"]: lon,
+                                m["temp_1"]: round(rng.uniform(310.0, 375.0), 1),
+                                m["temp_2"]: round(rng.uniform(285.0, 315.0), 1),
+                                m["pixel_geom"]: pixel_geom,
+                                m["frp"]: frp,
+                                m["confidence"]: rng.choice(confidences),
+                                m["fire_type"]: 0,
+                                m["day_night"]: rng.choice(day_nights),
+                            }
+                        )
+
+                        # Coincident overpass cluster in Aug/Sep 2024
+                        if year == 2024 and month in (8, 9) and rng.random() < 0.35 and len(available_sats) > 2:
+                            paired_sat = "N20" if sat != "N20" else "T"
+                            paired_geom = FOOTPRINT_VIIRS_375M_KM2 if paired_sat == "N20" else FOOTPRINT_MODIS_KM2
+                            offset_lat = round(lat + rng.uniform(-0.008, 0.008), 4)
+                            offset_lon = round(lon + rng.uniform(-0.008, 0.008), 4)
+                            offset_hour = (hour + rng.randint(1, 3)) % 24
+
+                            if min_lat <= offset_lat <= max_lat and min_lon <= offset_lon <= max_lon:
+                                raw_rows.append(
+                                    {
+                                        m["datetime_utc"]: f"{year}-{month:02d}-{day:02d}T{offset_hour:02d}:{minute:02d}:00Z",
+                                        m["satellite"]: paired_sat,
+                                        m["lat"]: offset_lat,
+                                        m["lon"]: offset_lon,
+                                        m["temp_1"]: round(rng.uniform(320.0, 380.0), 1),
+                                        m["temp_2"]: round(rng.uniform(290.0, 320.0), 1),
+                                        m["pixel_geom"]: paired_geom,
+                                        m["frp"]: round(frp * rng.uniform(0.85, 1.15), 1),
+                                        m["confidence"]: "high",
+                                        m["fire_type"]: 0,
+                                        m["day_night"]: "D" if 10 <= offset_hour <= 18 else "N",
+                                    }
+                                )
 
     return raw_rows
