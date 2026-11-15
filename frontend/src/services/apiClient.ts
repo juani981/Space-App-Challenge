@@ -154,6 +154,7 @@ export interface CellMonthAnomalyCell {
 
 export interface CellMonthMapCell {
   cell_id: number;
+  block_id?: number;
   lat_center: number;
   lon_center: number;
   cell_area_km2: number;
@@ -161,9 +162,17 @@ export interface CellMonthMapCell {
   f_eq: number;
   n_terra: number;
   months_active: number;
+  subcell_count?: number;
+  resolution_deg?: number;
   sensors: string[];
   quality_flag: number;
   quality_flags_decoded: QualityFlagDecoded[];
+}
+
+export interface CellMonthUiWarning {
+  code: string;
+  severity: 'warning' | 'info' | string;
+  message_es: string;
 }
 
 export interface CellMonthAoiResponse {
@@ -174,13 +183,21 @@ export interface CellMonthAoiResponse {
   method_version: string;
   data_source: 'postgres' | 'stub';
   area_region_km2: number;
+  aoi_cells_count: number;
+  celdas_usadas: number;
+  resolution_deg: number;
+  calendar_available: boolean;
+  ui_warnings: CellMonthUiWarning[];
   pending_confirmations: Record<string, unknown>;
+  contract?: Record<string, unknown>;
   summary: {
     total_n_eq: number;
     total_f_eq_mw: number;
     frp_density_mw_km2: number;
     active_cells_count: number;
-    window_rows_count: number;
+    aoi_cells_count?: number;
+    resolution_deg?: number;
+    window_rows_count?: number;
     n_terra_separate_series: number;
   };
   calendar_anomalies: CellMonthAnomalyCell[];

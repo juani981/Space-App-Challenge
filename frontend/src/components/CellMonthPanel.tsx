@@ -119,7 +119,7 @@ export function CellMonthPanel({
           </strong>
           <span style={{ fontSize: '10.5px', color: '#94a3b8' }}>
             {data
-              ? `${data.method_version} · ${data.data_source.toUpperCase()} · ${Math.round(data.area_region_km2).toLocaleString()} km²`
+              ? `${data.method_version} · ${data.resolution_deg ?? 0.25}° · ${data.data_source.toUpperCase()} · ${Math.round(data.area_region_km2).toLocaleString()} km²`
               : isEs
               ? 'Cargando serie 2012–2026...'
               : 'Loading 2012–2026 series...'}
@@ -130,6 +130,31 @@ export function CellMonthPanel({
 
       {isOpen && data && (
         <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {/* v0.2 UI WARNINGS (low-confidence bands bit 7, 2026-08 Aqua drift, <4 cells, zoom caps) */}
+          {data.ui_warnings && data.ui_warnings.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              {data.ui_warnings.map((w) => {
+                const isWarn = w.severity === 'warning';
+                return (
+                  <div
+                    key={w.code}
+                    style={{
+                      padding: '6px 8px',
+                      borderRadius: '6px',
+                      fontSize: '10.5px',
+                      lineHeight: 1.35,
+                      background: isWarn ? '#fef3c7' : '#e0f2fe',
+                      border: `1px solid ${isWarn ? '#f59e0b' : '#7dd3fc'}`,
+                      color: isWarn ? '#78350f' : '#0c4a6e',
+                    }}
+                  >
+                    <strong>{isWarn ? '⚠️' : 'ℹ️'}</strong> {w.message_es}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {/* CONTROLS: Metric Toggle + CSV Option 1 */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
             <div style={{ display: 'flex', gap: '4px' }}>
@@ -192,8 +217,17 @@ export function CellMonthPanel({
               </strong>
             </div>
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '6px 8px' }}>
-              <div style={{ fontSize: '10px', color: '#64748b' }}>{isEs ? 'Celdas 0,25° activas' : 'Active 0.25° cells'}</div>
-              <strong style={{ fontSize: '13px', color: '#0f172a' }}>{data.summary.active_cells_count}</strong>
+              <div style={{ fontSize: '10px', color: '#64748b' }}>
+                {isEs
+                  ? `Celdas activas (${data.resolution_deg ?? 0.25}°)`
+                  : `Active cells (${data.resolution_deg ?? 0.25}°)`}
+              </div>
+              <strong style={{ fontSize: '13px', color: '#0f172a' }}>
+                {data.summary.active_cells_count.toLocaleString()}{' '}
+                <span style={{ fontSize: '10px', fontWeight: 500, color: '#64748b' }}>
+                  / {(data.aoi_cells_count ?? 0).toLocaleString()} AOI
+                </span>
+              </strong>
             </div>
             <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '6px 8px' }}>
               <div style={{ fontSize: '10px', color: '#92400e' }}>{isEs ? 'Terra (serie propia)' : 'Terra (separate)'}</div>
@@ -201,8 +235,25 @@ export function CellMonthPanel({
             </div>
           </div>
 
-          {/* PERCENTILE ANOMALY MATRIX */}
-          <div style={{ overflowX: 'auto' }}>
+          {/* PERCENTILE ANOMALY MATRIX OR >50K CELLS GUARD */}
+          {!data.calendar_available ? (
+            <div
+              style={{
+                padding: '10px 12px',
+                borderRadius: '6px',
+                background: '#f8fafc',
+                border: '1px dashed #cbd5e1',
+                color: '#475569',
+                fontSize: '11px',
+                lineHeight: 1.4,
+              }}
+            >
+              {isEs
+                ? `Calendario 2012–2026 deshabilitado temporalmente: el AOI supera 50.000 celdas (${(data.aoi_cells_count ?? 0).toLocaleString()}). Acerca el zoom para visualizar anomalías mensuales.`
+                : `2012–2026 calendar paused: AOI exceeds 50,000 cells (${(data.aoi_cells_count ?? 0).toLocaleString()}). Zoom in to compute monthly anomalies.`}
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '2px', fontSize: '10px' }}>
               <thead>
                 <tr>
@@ -269,6 +320,7 @@ export function CellMonthPanel({
               </tbody>
             </table>
           </div>
+          )}
 
           {/* LEGEND & FULL SERIES TOGGLE */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px', fontSize: '10px', color: '#475569' }}>
@@ -316,7 +368,10 @@ export function CellMonthPanel({
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                 <strong>
-                  {isEs ? 'Celda Seleccionada' : 'Selected Cell'} #{selectedCell.cell_id}
+                  {(selectedCell.resolution_deg ?? 0.25) >= 1.0
+                    ? isEs ? 'Bloque 1° Seleccionado' : 'Selected 1° Block'
+                    : isEs ? 'Celda 0,25° Seleccionada' : 'Selected 0.25° Cell'}{' '}
+                  #{selectedCell.cell_id}
                 </strong>
                 <span style={{ fontFamily: 'monospace', color: '#475569' }}>
                   {selectedCell.lat_center.toFixed(3)}°, {selectedCell.lon_center.toFixed(3)}° · {selectedCell.cell_area_km2.toFixed(0)} km²
@@ -328,9 +383,13 @@ export function CellMonthPanel({
                 <strong>{selectedCell.months_active}</strong>
               </div>
               <div style={{ color: '#475569', marginTop: '2px' }}>
-                {isEs ? 'Procedencia' : 'Sensors'}: {selectedCell.sensors.join(', ')}
+                {selectedCell.sensors && selectedCell.sensors.length > 0 && (
+                  <>
+                    {isEs ? 'Procedencia' : 'Sensors'}: {selectedCell.sensors.join(', ')}
+                  </>
+                )}
                 {selectedCell.quality_flags_decoded.length > 0 &&
-                  ` · Flags: ${selectedCell.quality_flags_decoded.map((f) => f.label_es).join(', ')}`}
+                  `${selectedCell.sensors && selectedCell.sensors.length > 0 ? ' · ' : ''}Flags: ${selectedCell.quality_flags_decoded.map((f) => f.label_es).join(', ')}`}
               </div>
             </div>
           )}

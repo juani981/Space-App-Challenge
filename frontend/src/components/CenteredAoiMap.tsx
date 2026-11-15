@@ -10,8 +10,6 @@ import { useLanguage } from '../i18n/LanguageContext';
 
 export type MapRenderMode = 'cell_grid' | 'harmonized' | 'footprint';
 
-const HALF_CELL_DEG = 0.125;
-
 function getGridCellColor(ratio: number): { fill: string; stroke: string } {
   if (ratio >= 0.75) return { fill: '#b91c1c', stroke: '#7f1d1d' };
   if (ratio >= 0.5) return { fill: '#ef4444', stroke: '#991b1b' };
@@ -308,19 +306,22 @@ export function CenteredAoiMap({
           }}
         />
 
-        {/* 0.25° x 0.25° HARMONIZED GRID CELLS LAYER (PRIMARY FIXED CONTRACT: NO DOTS IN 'cell_grid') */}
+        {/* 0.25° / 1° HARMONIZED GRID CELLS LAYER (PRIMARY FIXED CONTRACT: NO DOTS IN 'cell_grid') */}
         {(activeMode === 'cell_grid' || showCellGrid) &&
           cellMonthCells.map((cell) => {
             const val = cellMonthMetric === 'n_eq' ? cell.n_eq : cell.f_eq;
             const ratio = maxCellValue > 0 ? val / maxCellValue : 0;
             const palette = getGridCellColor(ratio);
             const isCellSelected = selectedCellId === cell.cell_id;
+            const resDeg = cell.resolution_deg ?? 0.25;
+            const halfStep = resDeg / 2;
+            const is1Deg = resDeg >= 1.0;
             return (
               <Rectangle
-                key={`cm-cell-${cell.cell_id}`}
+                key={`cm-cell-${resDeg}-${cell.cell_id}`}
                 bounds={[
-                  [cell.lat_center - HALF_CELL_DEG, cell.lon_center - HALF_CELL_DEG],
-                  [cell.lat_center + HALF_CELL_DEG, cell.lon_center + HALF_CELL_DEG],
+                  [cell.lat_center - halfStep, cell.lon_center - halfStep],
+                  [cell.lat_center + halfStep, cell.lon_center + halfStep],
                 ]}
                 interactive={!isPickingLocation}
                 eventHandlers={{
@@ -338,11 +339,16 @@ export function CenteredAoiMap({
                 <Tooltip direction="top" opacity={0.95}>
                   <div style={{ fontSize: '11px', lineHeight: 1.35 }}>
                     <strong>
-                      {lang === 'es' ? 'Celda 0,25°' : '0.25° Cell'} #{cell.cell_id}
+                      {is1Deg
+                        ? lang === 'es' ? 'Bloque 1°' : '1° Block'
+                        : lang === 'es' ? 'Celda 0,25°' : '0.25° Cell'}{' '}
+                      #{cell.cell_id}
                     </strong>{' '}
-                    ({cell.cell_area_km2.toFixed(0)} km²)<br />
+                    ({cell.cell_area_km2.toFixed(0)} km²
+                    {is1Deg && cell.subcell_count ? ` · ${cell.subcell_count} subceldas` : ''})<br />
                     n_eq: <strong>{cell.n_eq}</strong> | f_eq: <strong>{cell.f_eq} MW</strong><br />
-                    {lang === 'es' ? 'Terra (propia)' : 'Terra (sep.)'}: {cell.n_terra} · {cell.sensors.join(', ')}
+                    {lang === 'es' ? 'Terra (propia)' : 'Terra (sep.)'}: {cell.n_terra}
+                    {cell.sensors && cell.sensors.length > 0 ? ` · ${cell.sensors.join(', ')}` : ''}
                     {cell.quality_flags_decoded.length > 0 && (
                       <>
                         <br />
