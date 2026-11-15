@@ -4,6 +4,7 @@ import {
   type AoiBounds,
   type CellMonthAnomalyCell,
   type CellMonthAoiResponse,
+  type CellMonthMapCell,
   type CellMonthMetric,
 } from '../services/apiClient';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -12,6 +13,7 @@ export interface CellMonthPanelProps {
   bounds: AoiBounds;
   data: CellMonthAoiResponse | null;
   metric: CellMonthMetric;
+  selectedCell?: CellMonthMapCell | null;
   startDate: string;
   endDate: string;
   onMetricChange: (metric: CellMonthMetric) => void;
@@ -61,6 +63,7 @@ export function CellMonthPanel({
   bounds,
   data,
   metric,
+  selectedCell = null,
   startDate,
   endDate,
   onMetricChange,
@@ -298,6 +301,39 @@ export function CellMonthPanel({
               </button>
             ) : null}
           </div>
+
+          {/* SELECTED 0.25° CELL INSPECTOR */}
+          {selectedCell && (
+            <div
+              style={{
+                background: '#f8fafc',
+                border: '1px solid #cbd5e1',
+                borderRadius: '6px',
+                padding: '8px 10px',
+                fontSize: '11px',
+                color: '#1e293b',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <strong>
+                  {isEs ? 'Celda Seleccionada' : 'Selected Cell'} #{selectedCell.cell_id}
+                </strong>
+                <span style={{ fontFamily: 'monospace', color: '#475569' }}>
+                  {selectedCell.lat_center.toFixed(3)}°, {selectedCell.lon_center.toFixed(3)}° · {selectedCell.cell_area_km2.toFixed(0)} km²
+                </span>
+              </div>
+              <div>
+                n_eq: <strong>{selectedCell.n_eq}</strong> | f_eq: <strong>{selectedCell.f_eq} MW</strong> | Terra:{' '}
+                <strong>{selectedCell.n_terra}</strong> | {isEs ? 'Meses activos' : 'Active months'}:{' '}
+                <strong>{selectedCell.months_active}</strong>
+              </div>
+              <div style={{ color: '#475569', marginTop: '2px' }}>
+                {isEs ? 'Procedencia' : 'Sensors'}: {selectedCell.sensors.join(', ')}
+                {selectedCell.quality_flags_decoded.length > 0 &&
+                  ` · Flags: ${selectedCell.quality_flags_decoded.map((f) => f.label_es).join(', ')}`}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </section>

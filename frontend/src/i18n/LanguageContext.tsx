@@ -40,12 +40,14 @@ export const TRANSLATIONS = {
       raw: 'Observación Bruta (Sin Calibrar)',
     },
     mapModeShort: {
+      cell_grid: 'Celdas 0,25° (n_eq / f_eq)',
       harmonized: 'Homogéneo Calibrado',
       footprint: 'Huella Física IFOV (m)',
     },
 
     // Map Floating Control & Tooltips
-    mapControlTitle: 'Representación Espacial de Detecciones',
+    mapControlTitle: 'Representación Espacial del Contrato',
+    mapRadioCellGrid: 'Grilla Armonizada 0,25° (Celdas n_eq / f_eq — Sin puntos)',
     mapRadioHarmonized: 'Focos Armonizados (Simbología Homogénea)',
     mapRadioFootprint: 'Discriminar por Sensor y Huella Física IFOV (m)',
     mapFootprintLegendTitle: 'Huella Instantánea de Proyección en Tierra (Nadir):',
@@ -138,12 +140,14 @@ export const TRANSLATIONS = {
       raw: 'Raw Observation (Uncalibrated)',
     },
     mapModeShort: {
+      cell_grid: '0.25° Grid (n_eq / f_eq)',
       harmonized: 'Calibrated Homogeneous',
       footprint: 'Physical IFOV Footprint (m)',
     },
 
     // Map Floating Control & Tooltips
-    mapControlTitle: 'Spatial Detection Representation',
+    mapControlTitle: 'Contract Spatial Representation',
+    mapRadioCellGrid: '0.25° Harmonized Grid (n_eq / f_eq cells — No dots)',
     mapRadioHarmonized: 'Harmonized Hotspots (Homogeneous Symbology)',
     mapRadioFootprint: 'Discriminate by Sensor & True IFOV Footprint (m)',
     mapFootprintLegendTitle: 'Instantaneous Ground Projected Footprint (Nadir):',

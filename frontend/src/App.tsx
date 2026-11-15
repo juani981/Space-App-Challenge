@@ -8,6 +8,7 @@ import {
   type AoiResponse,
   type CalibrationMode,
   type CellMonthAoiResponse,
+  type CellMonthMapCell,
   type CellMonthMetric,
   type UnifiedHotspot,
 } from './services/apiClient';
@@ -32,12 +33,13 @@ function AppContent() {
   const [startDate, setStartDate] = useState<string>('2024-01-01');
   const [endDate, setEndDate] = useState<string>('2024-12-31');
   const [calibrationMode, setCalibrationMode] = useState<CalibrationMode>('area_weighted');
-  const [mapRenderMode, setMapRenderMode] = useState<MapRenderMode>('harmonized');
+  const [mapRenderMode, setMapRenderMode] = useState<MapRenderMode>('cell_grid');
   const [cellMonthMetric, setCellMonthMetric] = useState<CellMonthMetric>('n_eq');
   const [showCellGrid, setShowCellGrid] = useState<boolean>(true);
 
   const [backendData, setBackendData] = useState<AoiResponse | null>(null);
   const [cellMonthData, setCellMonthData] = useState<CellMonthAoiResponse | null>(null);
+  const [selectedCell, setSelectedCell] = useState<CellMonthMapCell | null>(null);
   const [worldHotspots, setWorldHotspots] = useState<UnifiedHotspot[]>([]);
   const [selectedHotspot, setSelectedHotspot] = useState<UnifiedHotspot | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -86,6 +88,7 @@ function AppContent() {
 
         if (cellMonthResult.status === 'fulfilled') {
           setCellMonthData(cellMonthResult.value);
+          setSelectedCell((prev) => prev ?? cellMonthResult.value.cells[0] ?? null);
         }
 
         // Merge newly lazy-loaded viewport hotspots into the progressive world map cache
@@ -228,6 +231,8 @@ function AppContent() {
             onRenderModeChange={setMapRenderMode}
             cellMonthCells={cellMonthData?.cells ?? []}
             cellMonthMetric={cellMonthMetric}
+            selectedCellId={selectedCell?.cell_id ?? null}
+            onSelectCell={setSelectedCell}
             showCellGrid={showCellGrid}
             onToggleCellGrid={() => setShowCellGrid((p) => !p)}
           />
@@ -254,6 +259,7 @@ function AppContent() {
           isLoading={isLoading}
           cellMonthData={cellMonthData}
           cellMonthMetric={cellMonthMetric}
+          selectedCell={selectedCell}
           onCellMonthMetricChange={handleCellMonthMetricChange}
         />
       </div>

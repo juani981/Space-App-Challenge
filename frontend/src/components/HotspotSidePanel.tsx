@@ -3,6 +3,7 @@ import type {
   AoiBounds,
   CalibrationMode,
   CellMonthAoiResponse,
+  CellMonthMapCell,
   CellMonthMetric,
   MonthlyCalendarCell,
   UnifiedHotspot,
@@ -37,6 +38,7 @@ export interface HotspotSidePanelProps {
   isLoading?: boolean;
   cellMonthData?: CellMonthAoiResponse | null;
   cellMonthMetric?: CellMonthMetric;
+  selectedCell?: CellMonthMapCell | null;
   onCellMonthMetricChange?: (metric: CellMonthMetric) => void;
 }
 
@@ -58,6 +60,7 @@ export function HotspotSidePanel({
   isLoading = false,
   cellMonthData = null,
   cellMonthMetric = 'n_eq',
+  selectedCell = null,
   onCellMonthMetricChange,
 }: HotspotSidePanelProps) {
   const { lang, t } = useLanguage();
@@ -111,6 +114,27 @@ export function HotspotSidePanel({
           {t.mapControlTitle}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '12px',
+              cursor: 'pointer',
+              color: mapRenderMode === 'cell_grid' ? '#0f172a' : '#64748b',
+              fontWeight: mapRenderMode === 'cell_grid' ? 700 : 400,
+            }}
+          >
+            <input
+              type="radio"
+              name="sidePanelMapRenderMode"
+              value="cell_grid"
+              checked={mapRenderMode === 'cell_grid'}
+              onChange={() => onMapRenderModeChange('cell_grid')}
+              style={{ cursor: 'pointer' }}
+            />
+            {t.mapRadioCellGrid}
+          </label>
           <label
             style={{
               display: 'flex',
@@ -206,6 +230,7 @@ export function HotspotSidePanel({
         bounds={bounds}
         data={cellMonthData}
         metric={cellMonthMetric}
+        selectedCell={selectedCell}
         startDate={startDate}
         endDate={endDate}
         onMetricChange={(m) => onCellMonthMetricChange?.(m)}

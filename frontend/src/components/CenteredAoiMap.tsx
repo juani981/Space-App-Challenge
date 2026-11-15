@@ -8,7 +8,7 @@ import {
 } from '../utils/satelliteGenerations';
 import { useLanguage } from '../i18n/LanguageContext';
 
-export type MapRenderMode = 'harmonized' | 'footprint';
+export type MapRenderMode = 'cell_grid' | 'harmonized' | 'footprint';
 
 const HALF_CELL_DEG = 0.125;
 
@@ -28,7 +28,7 @@ export interface CenteredAoiMapProps {
   selectedHotspot?: UnifiedHotspot | null;
   /** Callback fired when the user clicks a hotspot marker */
   onSelectHotspot?: (hotspot: UnifiedHotspot) => void;
-  /** Controlled render mode ('harmonized' vs 'footprint') */
+  /** Controlled render mode ('cell_grid' vs legacy 'harmonized' / 'footprint') */
   renderMode?: MapRenderMode;
   /** Callback fired when render mode changes */
   onRenderModeChange?: (mode: MapRenderMode) => void;
@@ -36,7 +36,11 @@ export interface CenteredAoiMapProps {
   cellMonthCells?: CellMonthMapCell[];
   /** Active metric used to scale grid cell intensity */
   cellMonthMetric?: CellMonthMetric;
-  /** Whether the optional 0.25° grid cell overlay is visible */
+  /** Selected 0.25° cell_id for highlight */
+  selectedCellId?: number | null;
+  /** Callback fired when a 0.25° grid cell is clicked */
+  onSelectCell?: (cell: CellMonthMapCell) => void;
+  /** Whether the optional 0.25° grid cell overlay is visible in legacy modes */
   showCellGrid?: boolean;
   /** Toggle callback for the optional 0.25° grid cell overlay */
   onToggleCellGrid?: () => void;
@@ -241,11 +245,13 @@ export function CenteredAoiMap({
   renderMode: controlledMode,
   cellMonthCells = [],
   cellMonthMetric = 'n_eq',
+  selectedCellId = null,
+  onSelectCell,
   showCellGrid = true,
   onToggleCellGrid,
 }: CenteredAoiMapProps) {
   const { lang, t } = useLanguage();
-  const [internalMode] = useState<MapRenderMode>('harmonized');
+  const [internalMode] = useState<MapRenderMode>('cell_grid');
   const [visualCenter, setVisualCenter] = useState<[number, number]>([-32.0, -61.5]);
   const [locateTrigger, setLocateTrigger] = useState<number>(0);
   const [isPickingLocation, setIsPickingLocation] = useState<boolean>(false);
@@ -302,12 +308,13 @@ export function CenteredAoiMap({
           }}
         />
 
-        {/* OPTIONAL 0.25° x 0.25° HARMONIZED GRID CELLS OVERLAY (BELOW MARKERS) */}
-        {showCellGrid &&
+        {/* 0.25° x 0.25° HARMONIZED GRID CELLS LAYER (PRIMARY FIXED CONTRACT: NO DOTS IN 'cell_grid') */}
+        {(activeMode === 'cell_grid' || showCellGrid) &&
           cellMonthCells.map((cell) => {
             const val = cellMonthMetric === 'n_eq' ? cell.n_eq : cell.f_eq;
             const ratio = maxCellValue > 0 ? val / maxCellValue : 0;
             const palette = getGridCellColor(ratio);
+            const isCellSelected = selectedCellId === cell.cell_id;
             return (
               <Rectangle
                 key={`cm-cell-${cell.cell_id}`}
@@ -316,11 +323,16 @@ export function CenteredAoiMap({
                   [cell.lat_center + HALF_CELL_DEG, cell.lon_center + HALF_CELL_DEG],
                 ]}
                 interactive={!isPickingLocation}
+                eventHandlers={{
+                  click: () => {
+                    if (!isPickingLocation) onSelectCell?.(cell);
+                  },
+                }}
                 pathOptions={{
-                  color: palette.stroke,
+                  color: isCellSelected ? '#0f172a' : palette.stroke,
                   fillColor: palette.fill,
-                  fillOpacity: 0.26,
-                  weight: 1,
+                  fillOpacity: activeMode === 'cell_grid' ? (isCellSelected ? 0.65 : 0.46) : 0.26,
+                  weight: isCellSelected ? 2.5 : 1,
                 }}
               >
                 <Tooltip direction="top" opacity={0.95}>
@@ -345,8 +357,8 @@ export function CenteredAoiMap({
             );
           })}
 
-        {/* ASYNCHRONOUSLY LAZY-LOADED HOTSPOT RENDERING LAYER */}
-        {orderedHotspots.map((hs, idx) => {
+        {/* LEGACY POINT LAYER (ONLY SHOWN IF USER EXPLICITLY SWITCHES AWAY FROM 'cell_grid') */}
+        {activeMode !== 'cell_grid' && orderedHotspots.map((hs, idx) => {
           const isSelected =
             selectedHotspot !== null &&
             selectedHotspot.lat === hs.lat &&
