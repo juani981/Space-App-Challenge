@@ -462,9 +462,6 @@ export function CenteredAoiMap({
           }}
           title={t.userLocationTooltip}
         >
-          <span style={{ color: '#0284c7', fontWeight: 700, fontFamily: 'sans-serif', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-            Lat / Lon
-          </span>
           <span style={{ fontWeight: 600 }}>
             {visualCenter[0].toFixed(4)}°, {visualCenter[1].toFixed(4)}°
           </span>
