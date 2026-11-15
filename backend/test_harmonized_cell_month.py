@@ -1,5 +1,11 @@
+import csv
+import io
 import unittest
 from datetime import date
+
+from fastapi.testclient import TestClient
+
+from main import app
 
 from harmonized_cell_month import (
     BASELINE_EXCLUDE_MASK,
@@ -161,6 +167,58 @@ class TestHarmonizedCellMonthEngine(unittest.TestCase):
 
         # Pending confirmation map exists cleanly
         self.assertFalse(PENDING_TEAM_CONFIRMATION["quality_flag_bitmask_confirmed"])
+
+    def test_cell_month_api_endpoints_and_csv_export(self):
+        """Verifies GET /api/cell-month/aoi and GET /api/cell-month/export.csv via stub fallback."""
+        client = TestClient(app)
+
+        resp = client.get(
+            "/api/cell-month/aoi",
+            params={
+                "min_lon": -65.0,
+                "min_lat": -32.0,
+                "max_lon": -63.0,
+                "max_lat": -30.0,
+                "start_date": "2024-01-01",
+                "end_date": "2026-08-01",
+                "metric": "f_eq",
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertEqual(payload["method_version"], "v0.1-provisional")
+        self.assertIn(payload["data_source"], ("stub", "postgres"))
+        self.assertGreater(payload["area_region_km2"], 0.0)
+        self.assertGreater(len(payload["calendar_anomalies"]), 100)
+        self.assertIn("pending_confirmations", payload)
+        self.assertIn("n_terra_separate_series", payload["summary"])
+
+        # Verify 2026-08 carries MODIS_ONLY + LAST_MONTH flags when present in calendar
+        aug_2026 = [c for c in payload["calendar_anomalies"] if c["year"] == 2026 and c["month_num"] == 8]
+        if aug_2026:
+            codes = {f["code"] for f in aug_2026[0]["quality_flags_decoded"]}
+            self.assertIn("modis_only", codes)
+            self.assertIn("last_month", codes)
+
+        # Verify CSV export
+        csv_resp = client.get(
+            "/api/cell-month/export.csv",
+            params={
+                "min_lon": -65.0,
+                "min_lat": -32.0,
+                "max_lon": -63.0,
+                "max_lat": -30.0,
+                "start_date": "2024-01-01",
+                "end_date": "2024-12-31",
+            },
+        )
+        self.assertEqual(csv_resp.status_code, 200)
+        self.assertIn("text/csv", csv_resp.headers["content-type"])
+        reader = list(csv.reader(io.StringIO(csv_resp.text)))
+        self.assertGreater(len(reader), 1)
+        headers = reader[0]
+        for required_col in ("month", "cell_id", "n_eq", "f_eq", "ref_sat", "sensors", "quality_flag", "method_version"):
+            self.assertIn(required_col, headers)
 
 
 if __name__ == "__main__":

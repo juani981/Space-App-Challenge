@@ -260,6 +260,16 @@ def row_col_to_cell_id(
     return row * GRID_COLS + col_idx
 
 
+def bbox_to_grid_indices(
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+) -> tuple[int, int, list[tuple[int, int]]]:
+    """Returns `(south_idx_min, south_idx_max, col_ranges)` for an AOI bounding box."""
+    return _lat_range_to_south_indices(min_lat, max_lat) + (_lon_span_to_col_ranges(min_lon, max_lon),)
+
+
 def bbox_to_cell_id_ranges(
     min_lon: float,
     min_lat: float,
@@ -271,8 +281,7 @@ def bbox_to_cell_id_ranges(
     Translates an AOI bounding box into contiguous `(start_cell_id, end_cell_id)` tuples
     for fast `cell_id BETWEEN :a AND :b` SQL queries (supports +-180° antimeridian split).
     """
-    s_min, s_max = _lat_range_to_south_indices(min_lat, max_lat)
-    col_ranges = _lon_span_to_col_ranges(min_lon, max_lon)
+    s_min, s_max, col_ranges = bbox_to_grid_indices(min_lon, min_lat, max_lon, max_lat)
 
     ranges: list[tuple[int, int]] = []
     for south_idx in range(s_min, s_max + 1):
@@ -295,8 +304,7 @@ def compute_aoi_grid_area_km2(
     Computes the FULL area (km2) of all 0.25° grid cells covered by the AOI,
     including cells with zero fire rows (essential because `harmonized.cell_month` is sparse).
     """
-    s_min, s_max = _lat_range_to_south_indices(min_lat, max_lat)
-    col_ranges = _lon_span_to_col_ranges(min_lon, max_lon)
+    s_min, s_max, col_ranges = bbox_to_grid_indices(min_lon, min_lat, max_lon, max_lat)
     total_cols = sum((c_end - c_start + 1) for c_start, c_end in col_ranges)
 
     total_area = 0.0
