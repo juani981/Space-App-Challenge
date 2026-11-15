@@ -213,6 +213,8 @@ function AppContent() {
           startDate={startDate}
           endDate={endDate}
           calibrationMode={calibrationMode}
+          mapRenderMode={mapRenderMode}
+          onMapRenderModeChange={setMapRenderMode}
           onDateRangeChange={handleDateRangeChange}
           onCalibrationModeChange={handleCalibrationModeChange}
           onRefresh={() => executeQuery(bounds, startDate, endDate, calibrationMode, false)}

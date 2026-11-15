@@ -382,7 +382,7 @@ export function CenteredAoiMap({
         })}
       </MapContainer>
 
-      {/* Floating Spatial Representation & Geolocation Card */}
+      {/* Compact Floating Geolocation Pill on Map */}
       <div
         style={{
           position: 'absolute',
@@ -393,17 +393,13 @@ export function CenteredAoiMap({
           backdropFilter: 'blur(4px)',
           borderRadius: '8px',
           boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
-          padding: '10px 14px',
+          padding: '8px 10px',
           border: '1px solid #cbd5e1',
-          maxWidth: '355px',
+          maxWidth: '340px',
         }}
       >
-        <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>
-          {t.mapControlTitle}
-        </div>
-
         {/* Geolocation Controls: Auto-GPS + Manual Map Pin */}
-        <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           <button
             type="button"
             onClick={() => {
@@ -457,7 +453,7 @@ export function CenteredAoiMap({
               border: '1px solid #fde68a',
               borderRadius: '4px',
               padding: '4px 8px',
-              marginBottom: '8px',
+              marginTop: '6px',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
@@ -479,82 +475,6 @@ export function CenteredAoiMap({
             >
               ×
             </button>
-          </div>
-        )}
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontSize: '12px',
-              cursor: 'pointer',
-              color: activeMode === 'harmonized' ? '#0f172a' : '#64748b',
-              fontWeight: activeMode === 'harmonized' ? 600 : 400,
-            }}
-          >
-            <input
-              type="radio"
-              name="mapRenderMode"
-              value="harmonized"
-              checked={activeMode === 'harmonized'}
-              onChange={() => handleModeChange('harmonized')}
-              style={{ cursor: 'pointer' }}
-            />
-            {t.mapRadioHarmonized}
-          </label>
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontSize: '12px',
-              cursor: 'pointer',
-              color: activeMode === 'footprint' ? '#0f172a' : '#64748b',
-              fontWeight: activeMode === 'footprint' ? 600 : 400,
-            }}
-          >
-            <input
-              type="radio"
-              name="mapRenderMode"
-              value="footprint"
-              checked={activeMode === 'footprint'}
-              onChange={() => handleModeChange('footprint')}
-              style={{ cursor: 'pointer' }}
-            />
-            {t.mapRadioFootprint}
-          </label>
-        </div>
-
-        {/* Legend for 4 Satellite Generations (when footprint mode is active) */}
-        {activeMode === 'footprint' && (
-          <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid #e2e8f0', fontSize: '11px' }}>
-            <div style={{ fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
-              {t.mapFootprintLegendTitle}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-              {(['G1', 'G2', 'G3', 'G4'] as const).map((genKey) => {
-                const info = SATELLITE_GENERATIONS[genKey];
-                return (
-                  <div key={genKey} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span
-                      style={{
-                        width: '12px',
-                        height: '12px',
-                        borderRadius: '50%',
-                        backgroundColor: info.color,
-                        border: `1.5px solid ${info.strokeColor}`,
-                        display: 'inline-block',
-                      }}
-                    />
-                    <span style={{ color: '#1e293b' }}>
-                      <strong>{genKey}:</strong> {info.name} ({info.resolutionMeters}m)
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
           </div>
         )}
       </div>

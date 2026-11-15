@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { AoiBounds, CalibrationMode, MonthlyCalendarCell, UnifiedHotspot } from '../services/apiClient';
+import type { MapRenderMode } from './CenteredAoiMap';
 import { InteractiveCalendar } from './InteractiveCalendar';
 import {
   CANONICAL_ATTRIBUTES_CONFIG,
@@ -8,6 +9,7 @@ import {
 import { VisualizationModuleRenderer } from './visualizations/VisualizationLibrary';
 import type { SidePanelVisualizationContext } from './visualizations/contracts';
 import { LanguageToggle, resolveText, useLanguage } from '../i18n/LanguageContext';
+import { SATELLITE_GENERATIONS } from '../utils/satelliteGenerations';
 
 export interface HotspotSidePanelProps {
   status: string;
@@ -19,6 +21,8 @@ export interface HotspotSidePanelProps {
   startDate: string;
   endDate: string;
   calibrationMode: CalibrationMode;
+  mapRenderMode: MapRenderMode;
+  onMapRenderModeChange: (mode: MapRenderMode) => void;
   onDateRangeChange: (start: string, end: string) => void;
   onCalibrationModeChange: (mode: CalibrationMode) => void;
   onRefresh: () => void;
@@ -35,6 +39,8 @@ export function HotspotSidePanel({
   startDate,
   endDate,
   calibrationMode,
+  mapRenderMode,
+  onMapRenderModeChange,
   onDateRangeChange,
   onCalibrationModeChange,
   onRefresh,
@@ -77,6 +83,96 @@ export function HotspotSidePanel({
           <strong>{t.panelStatusLabel}</strong> {status} ({totalHotspots} {t.hotspotsInAoiSuffix})
         </div>
       </div>
+
+      {/* TOP CONTROL: SPATIAL DETECTION REPRESENTATION RADIO SELECTOR */}
+      <section
+        style={{
+          background: '#ffffff',
+          border: '1px solid #cbd5e1',
+          borderRadius: '8px',
+          padding: '12px 14px',
+        }}
+      >
+        <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+          {t.mapControlTitle}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '12px',
+              cursor: 'pointer',
+              color: mapRenderMode === 'harmonized' ? '#0f172a' : '#64748b',
+              fontWeight: mapRenderMode === 'harmonized' ? 600 : 400,
+            }}
+          >
+            <input
+              type="radio"
+              name="sidePanelMapRenderMode"
+              value="harmonized"
+              checked={mapRenderMode === 'harmonized'}
+              onChange={() => onMapRenderModeChange('harmonized')}
+              style={{ cursor: 'pointer' }}
+            />
+            {t.mapRadioHarmonized}
+          </label>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '12px',
+              cursor: 'pointer',
+              color: mapRenderMode === 'footprint' ? '#0f172a' : '#64748b',
+              fontWeight: mapRenderMode === 'footprint' ? 600 : 400,
+            }}
+          >
+            <input
+              type="radio"
+              name="sidePanelMapRenderMode"
+              value="footprint"
+              checked={mapRenderMode === 'footprint'}
+              onChange={() => onMapRenderModeChange('footprint')}
+              style={{ cursor: 'pointer' }}
+            />
+            {t.mapRadioFootprint}
+          </label>
+        </div>
+
+        {/* Legend for 4 Satellite Generations (when footprint mode is active) */}
+        {mapRenderMode === 'footprint' && (
+          <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid #e2e8f0', fontSize: '11px' }}>
+            <div style={{ fontWeight: 600, color: '#475569', marginBottom: '5px' }}>
+              {t.mapFootprintLegendTitle}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px' }}>
+              {(['G1', 'G2', 'G3', 'G4'] as const).map((genKey) => {
+                const info = SATELLITE_GENERATIONS[genKey];
+                return (
+                  <div key={genKey} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span
+                      style={{
+                        width: '11px',
+                        height: '11px',
+                        borderRadius: '50%',
+                        backgroundColor: info.color,
+                        border: `1.5px solid ${info.strokeColor}`,
+                        display: 'inline-block',
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span style={{ color: '#1e293b' }}>
+                      <strong>{genKey}:</strong> {info.name} ({info.resolutionMeters}m)
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* SECCIÓN A: CALENDARIO DE ACTIVIDAD 100% FUNCIONAL */}
       <InteractiveCalendar
