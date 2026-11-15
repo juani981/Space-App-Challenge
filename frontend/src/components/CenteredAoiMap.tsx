@@ -173,6 +173,19 @@ function ViewportAndGeolocationController({
     }
   }, [locateTrigger, requestBrowserLocation]);
 
+  // Synchronize Leaflet container cursor when "Pick on Map" mode is active
+  useEffect(() => {
+    const container = map.getContainer();
+    if (isPickingLocation) {
+      container.style.setProperty('cursor', 'crosshair', 'important');
+    } else {
+      container.style.removeProperty('cursor');
+    }
+    return () => {
+      container.style.removeProperty('cursor');
+    };
+  }, [map, isPickingLocation]);
+
   useMapEvents({
     moveend: emitViewportBounds,
     zoomend: emitViewportBounds,
@@ -219,6 +232,8 @@ export function CenteredAoiMap({
 
   return (
     <div
+      id="aoi-map-wrapper"
+      className={isPickingLocation ? 'picking-location' : undefined}
       style={{
         position: 'relative',
         height: '100%',
@@ -226,6 +241,16 @@ export function CenteredAoiMap({
         cursor: isPickingLocation ? 'crosshair' : 'grab',
       }}
     >
+      {isPickingLocation && (
+        <style>{`
+          #aoi-map-wrapper.picking-location .leaflet-container,
+          #aoi-map-wrapper.picking-location .leaflet-grab,
+          #aoi-map-wrapper.picking-location .leaflet-dragging .leaflet-grab,
+          #aoi-map-wrapper.picking-location .leaflet-interactive {
+            cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'><circle cx='14' cy='14' r='9' fill='none' stroke='%230284c7' stroke-width='2'/><circle cx='14' cy='14' r='2' fill='%23ea580c'/><line x1='14' y1='1' x2='14' y2='7' stroke='%230284c7' stroke-width='2'/><line x1='14' y1='21' x2='14' y2='27' stroke='%230284c7' stroke-width='2'/><line x1='1' y1='14' x2='7' y2='14' stroke='%230284c7' stroke-width='2'/><line x1='21' y1='14' x2='27' y2='14' stroke='%230284c7' stroke-width='2'/></svg>") 14 14, crosshair !important;
+          }
+        `}</style>
+      )}
       <MapContainer center={[-32.0, -61.5]} zoom={6} style={{ height: '100%', width: '100%' }}>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -285,8 +310,11 @@ export function CenteredAoiMap({
                 key={key}
                 center={[hs.lat, hs.lon]}
                 radius={isSelected ? 10 : isCluster ? 8 : 6}
+                interactive={!isPickingLocation}
                 eventHandlers={{
-                  click: () => onSelectHotspot?.(hs),
+                  click: () => {
+                    if (!isPickingLocation) onSelectHotspot?.(hs);
+                  },
                 }}
                 pathOptions={{
                   color: isSelected ? '#0f172a' : isCluster ? '#d97706' : '#991b1b',
@@ -312,8 +340,11 @@ export function CenteredAoiMap({
               <Circle
                 center={[hs.lat, hs.lon]}
                 radius={gen.footprintRadiusMeters}
+                interactive={!isPickingLocation}
                 eventHandlers={{
-                  click: () => onSelectHotspot?.(hs),
+                  click: () => {
+                    if (!isPickingLocation) onSelectHotspot?.(hs);
+                  },
                 }}
                 pathOptions={{
                   color: isSelected ? '#0f172a' : gen.strokeColor,
