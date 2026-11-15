@@ -1,7 +1,13 @@
-import { useState } from 'react';
-import { CenteredAoiMap } from './components/CenteredAoiMap';
+import { useCallback, useEffect, useState } from 'react';
+import { CenteredAoiMap, type MapRenderMode } from './components/CenteredAoiMap';
 import { HotspotSidePanel } from './components/HotspotSidePanel';
-import { fetchAoi, type AoiBounds, type AoiResponse, type UnifiedHotspot } from './services/apiClient';
+import {
+  fetchAoi,
+  type AoiBounds,
+  type AoiResponse,
+  type CalibrationMode,
+  type UnifiedHotspot,
+} from './services/apiClient';
 
 export default function App() {
   const [bounds, setBounds] = useState<AoiBounds>({
@@ -10,76 +16,142 @@ export default function App() {
     maxLon: -58.0,
     maxLat: -29.0,
   });
+
+  const [startDate, setStartDate] = useState<string>('2024-01-01');
+  const [endDate, setEndDate] = useState<string>('2024-12-31');
+  const [calibrationMode, setCalibrationMode] = useState<CalibrationMode>('area_weighted');
+  const [mapRenderMode, setMapRenderMode] = useState<MapRenderMode>('harmonized');
+
   const [backendData, setBackendData] = useState<AoiResponse | null>(null);
   const [selectedHotspot, setSelectedHotspot] = useState<UnifiedHotspot | null>(null);
-  const [status, setStatus] = useState<string>('Inactivo — Arrastra el mapa y pulsa "Query AOI"');
+  const [status, setStatus] = useState<string>('Inactivo — Pulsa "Consultar AOI" o ajusta el mapa');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  async function handleQueryAoi() {
-    setStatus('Cargando...');
-    try {
-      const res = await fetchAoi(bounds);
-      setBackendData(res);
-      setSelectedHotspot(res.hotspots[0] ?? null);
-      setStatus('Conectado al Backend');
-    } catch (err) {
-      setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
+  const executeQuery = useCallback(
+    async (
+      targetBounds = bounds,
+      start = startDate,
+      end = endDate,
+      calMode = calibrationMode,
+    ) => {
+      setIsLoading(true);
+      setStatus('Consultando API y aplicando armonización científica...');
+      try {
+        const res = await fetchAoi(targetBounds, {
+          startDate: start,
+          endDate: end,
+          calibrationMode: calMode,
+        });
+        setBackendData(res);
+        setSelectedHotspot(res.hotspots[0] ?? null);
+        setStatus(
+          `Conectado — Modo: ${res.calibration_mode} | Fuente: ${res.data_source.toUpperCase()}`
+        );
+      } catch (err) {
+        setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [bounds, startDate, endDate, calibrationMode]
+  );
+
+  // Initial load
+  useEffect(() => {
+    executeQuery();
+  }, []); // Run once on mount
+
+  const handleDateRangeChange = (newStart: string, newEnd: string) => {
+    setStartDate(newStart);
+    setEndDate(newEnd);
+    executeQuery(bounds, newStart, newEnd, calibrationMode);
+  };
+
+  const handleCalibrationModeChange = (newMode: CalibrationMode) => {
+    setCalibrationMode(newMode);
+    executeQuery(bounds, startDate, endDate, newMode);
+  };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', height: '100vh' }}>
-      {/* LEFT BLOCK: Centered-Box Map + Live Coordinate Readout Bar */}
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1.9fr 1.1fr', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+      {/* LEFT BLOCK: Centered-Box Map + Live Coordinate & Mode Bar */}
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0 }}>
         <div
           style={{
-            padding: '10px 14px',
+            padding: '8px 14px',
             background: '#1e293b',
             color: '#f8fafc',
             display: 'flex',
-            gap: '14px',
+            gap: '12px',
             alignItems: 'center',
             flexWrap: 'wrap',
+            zIndex: 10,
           }}
         >
-          <strong>Centered AOI Bounds:</strong>
-          <span style={{ fontSize: '13px', fontFamily: 'monospace', background: '#0f172a', padding: '4px 8px', borderRadius: '4px' }}>
-            minLon: {bounds.minLon.toFixed(4)} | minLat: {bounds.minLat.toFixed(4)} | maxLon: {bounds.maxLon.toFixed(4)} | maxLat: {bounds.maxLat.toFixed(4)}
-          </span>
-          <button
-            onClick={handleQueryAoi}
+          <strong style={{ fontSize: '13px' }}>AOI Centrada:</strong>
+          <span
             style={{
-              padding: '6px 12px',
+              fontSize: '11px',
+              fontFamily: 'monospace',
+              background: '#0f172a',
+              padding: '3px 8px',
+              borderRadius: '4px',
+            }}
+          >
+            lon: [{bounds.minLon.toFixed(3)}, {bounds.maxLon.toFixed(3)}] | lat: [{bounds.minLat.toFixed(3)}, {bounds.maxLat.toFixed(3)}]
+          </span>
+
+          <button
+            onClick={() => executeQuery()}
+            disabled={isLoading}
+            style={{
+              padding: '5px 12px',
               background: '#ea580c',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 600,
+              cursor: isLoading ? 'wait' : 'pointer',
+              fontWeight: 700,
+              fontSize: '12px',
             }}
           >
-            Query AOI
+            {isLoading ? 'Cargando...' : 'Consultar AOI'}
           </button>
-          <span style={{ fontSize: '12px', opacity: 0.8 }}>
-            (Haz clic en cualquier punto rojo para ver todos sus datos a la derecha)
+
+          <span style={{ fontSize: '11px', opacity: 0.85 }}>
+            Calibración: <strong>{calibrationMode}</strong> | Vista mapa: <strong>{mapRenderMode}</strong>
           </span>
         </div>
 
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
           <CenteredAoiMap
             onBoundsChange={setBounds}
             hotspots={backendData?.hotspots}
             selectedHotspot={selectedHotspot}
             onSelectHotspot={setSelectedHotspot}
+            renderMode={mapRenderMode}
+            onRenderModeChange={setMapRenderMode}
           />
         </div>
       </div>
 
-      {/* RIGHT BLOCK: Full Point Inspector + Calendar UI Mock + Collapsible WIP Analysis */}
-      <HotspotSidePanel
-        status={status}
-        totalHotspots={backendData?.hotspots.length ?? 0}
-        selectedHotspot={selectedHotspot}
-      />
+      {/* RIGHT BLOCK: Point Inspector + Interactive Activity Calendar + Harmonization Analytics */}
+      <div style={{ height: '100%', overflowY: 'auto', minWidth: 0 }}>
+        <HotspotSidePanel
+          status={status}
+          totalHotspots={backendData?.hotspots.length ?? 0}
+          selectedHotspot={selectedHotspot}
+          bounds={bounds}
+          calendarCells={backendData?.calendar_cells ?? []}
+          startDate={startDate}
+          endDate={endDate}
+          calibrationMode={calibrationMode}
+          onDateRangeChange={handleDateRangeChange}
+          onCalibrationModeChange={handleCalibrationModeChange}
+          onRefresh={() => executeQuery()}
+          isLoading={isLoading}
+        />
+      </div>
     </div>
   );
 }
