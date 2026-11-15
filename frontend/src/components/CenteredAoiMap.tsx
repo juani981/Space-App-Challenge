@@ -376,8 +376,8 @@ export function CenteredAoiMap({
           pointerEvents: 'none',
           zIndex: 999,
           display: 'flex',
-          flexDirection: 'column',
           alignItems: 'center',
+          justifyContent: 'center',
         }}
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -388,23 +388,9 @@ export function CenteredAoiMap({
           <line x1="2" y1="12" x2="6" y2="12" stroke="#0284c7" strokeWidth="1.5" />
           <line x1="18" y1="12" x2="22" y2="12" stroke="#0284c7" strokeWidth="1.5" />
         </svg>
-        <div
-          style={{
-            marginTop: '2px',
-            background: 'rgba(15, 23, 42, 0.78)',
-            color: '#f8fafc',
-            fontSize: '10px',
-            fontFamily: 'monospace',
-            padding: '1px 6px',
-            borderRadius: '4px',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {visualCenter[0].toFixed(4)}°, {visualCenter[1].toFixed(4)}°
-        </div>
       </div>
 
-      {/* Bottom-Right Conventional Map Controls (GPS Locate & Drop-Pin) */}
+      {/* Bottom-Right Conventional Map Controls (Live Lat/Lon Readout + GPS Locate & Drop-Pin) */}
       <div
         style={{
           position: 'absolute',
@@ -423,11 +409,11 @@ export function CenteredAoiMap({
               background: isPickingLocation ? 'rgba(15, 23, 42, 0.92)' : '#fffbeb',
               color: isPickingLocation ? '#f8fafc' : '#b45309',
               border: `1px solid ${isPickingLocation ? '#334155' : '#fde68a'}`,
-              borderRadius: '6px',
+              borderRadius: '8px',
               padding: '6px 10px',
               fontSize: '11px',
               fontWeight: 600,
-              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.28)',
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
@@ -455,6 +441,34 @@ export function CenteredAoiMap({
             )}
           </div>
         )}
+
+        {/* Live Center Latitude & Longitude Legend (Matching Map Control Style) */}
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '8px',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.28)',
+            border: '1px solid rgba(15, 23, 42, 0.14)',
+            padding: '6px 10px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '11px',
+            fontFamily: 'monospace',
+            color: '#0f172a',
+            whiteSpace: 'nowrap',
+            height: '38px',
+            boxSizing: 'border-box',
+          }}
+          title={t.userLocationTooltip}
+        >
+          <span style={{ color: '#0284c7', fontWeight: 700, fontFamily: 'sans-serif', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+            Lat / Lon
+          </span>
+          <span style={{ fontWeight: 600 }}>
+            {visualCenter[0].toFixed(4)}°, {visualCenter[1].toFixed(4)}°
+          </span>
+        </div>
 
         {/* Standard Map Control Button Stack (Google Maps / Leaflet style) */}
         <div
