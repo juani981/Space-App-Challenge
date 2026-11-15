@@ -16,6 +16,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./docker/postgres/02_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+      - ./docker/postgres/03_harmonized_cell_month_schema.sql:/docker-entrypoint-initdb.d/03_harmonized_cell_month_schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d hotspots_db"]
       interval: 5s
@@ -37,6 +38,7 @@ services:
       PORT: 8000
       PYTHONUNBUFFERED: "1"
       DATA_SOURCE_MODE: ${DATA_SOURCE_MODE:-database}
+      CELL_MONTH_USE_CELL_ID_RANGES: ${CELL_MONTH_USE_CELL_ID_RANGES:-false}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-hotspots_db}
     ports:
       - "8000:8000"

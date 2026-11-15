@@ -19,6 +19,7 @@ import hashlib
 import io
 import logging
 import math
+import os
 from datetime import date
 from typing import Any, Literal, Optional
 
@@ -45,6 +46,7 @@ logger = logging.getLogger("backend.cell_month")
 
 SERIES_START_DATE = date(2012, 1, 1)
 SERIES_END_DATE = date(2026, 8, 1)
+USE_CELL_ID_RANGES = os.getenv("CELL_MONTH_USE_CELL_ID_RANGES", "false").lower() == "true"
 
 
 def _iter_series_months(start: date = SERIES_START_DATE, end: date = SERIES_END_DATE) -> list[date]:
@@ -111,7 +113,7 @@ def query_postgres_cell_month(
     max_lat: float,
     start_month: date = SERIES_START_DATE,
     end_month: date = SERIES_END_DATE,
-    use_cell_id_ranges: bool = False,
+    use_cell_id_ranges: Optional[bool] = None,
 ) -> Optional[list[HarmonizedCellMonthRow]]:
     """
     Queries PostgreSQL 18 `harmonized.cell_month` across the full baseline window.
@@ -124,12 +126,13 @@ def query_postgres_cell_month(
         logger.debug("psycopg not installed; using cell_month stub fallback")
         return None
 
+    use_ranges = USE_CELL_ID_RANGES if use_cell_id_ranges is None else use_cell_id_ranges
     spatial_sql, spatial_params = _build_spatial_where_clause(
         min_lon=min_lon,
         min_lat=min_lat,
         max_lon=max_lon,
         max_lat=max_lat,
-        use_cell_id_ranges=use_cell_id_ranges,
+        use_cell_id_ranges=use_ranges,
     )
 
     sql = f"""

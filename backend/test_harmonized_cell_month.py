@@ -5,6 +5,7 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 
+from cell_month_service import _build_spatial_where_clause
 from main import app
 
 from harmonized_cell_month import (
@@ -219,6 +220,20 @@ class TestHarmonizedCellMonthEngine(unittest.TestCase):
         headers = reader[0]
         for required_col in ("month", "cell_id", "n_eq", "f_eq", "ref_sat", "sensors", "quality_flag", "method_version"):
             self.assertIn(required_col, headers)
+
+    def test_sql_spatial_predicate_modes(self):
+        """Verifies both lat/lon fallback and cell_id BETWEEN SQL predicates (regular + antimeridian)."""
+        sql_ll, params_ll = _build_spatial_where_clause(-65.0, -32.0, -64.0, -31.0, use_cell_id_ranges=False)
+        self.assertIn("lat_center BETWEEN", sql_ll)
+        self.assertEqual(params_ll, [-32.0, -31.0, -65.0, -64.0])
+
+        sql_anti, params_anti = _build_spatial_where_clause(179.0, -1.0, -179.0, 1.0, use_cell_id_ranges=False)
+        self.assertIn("OR lon_center <=", sql_anti)
+        self.assertEqual(params_anti, [-1.0, 1.0, 179.0, -179.0])
+
+        sql_cid, params_cid = _build_spatial_where_clause(-0.5, -0.5, 0.0, 0.0, use_cell_id_ranges=True)
+        self.assertIn("cell_id BETWEEN %s AND %s", sql_cid)
+        self.assertEqual(len(params_cid), 4)  # 2 latitude rows * 2 bounds each
 
 
 if __name__ == "__main__":
