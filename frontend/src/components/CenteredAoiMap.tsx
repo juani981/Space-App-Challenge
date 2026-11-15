@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from 'react';
-import { CircleMarker, MapContainer, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { CircleMarker, MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import type { AoiBounds, UnifiedHotspot } from '../services/apiClient';
 
 export interface CenteredAoiMapProps {
@@ -7,6 +7,10 @@ export interface CenteredAoiMapProps {
   onBoundsChange: (bounds: AoiBounds) => void;
   /** Harmonized hotspots returned by the backend to display inside the AOI */
   hotspots?: UnifiedHotspot[];
+  /** Currently selected hotspot to highlight on the map */
+  selectedHotspot?: UnifiedHotspot | null;
+  /** Callback fired when the user clicks a red hotspot marker */
+  onSelectHotspot?: (hotspot: UnifiedHotspot) => void;
   /** Fraction of the map viewport width/height occupied by the centered orange box (0.1 to 0.9) */
   boxRatio?: number;
 }
@@ -60,11 +64,13 @@ function ViewportBoxTracker({
 
 /**
  * SRP & OCP: Self-contained map component with a fixed, centered orange AOI reticle
- * and optional hotspot markers inside the queried region.
+ * and clickable red hotspot markers that delegate inspection to the right side panel.
  */
 export function CenteredAoiMap({
   onBoundsChange,
   hotspots = [],
+  selectedHotspot = null,
+  onSelectHotspot,
   boxRatio = 0.5,
 }: CenteredAoiMapProps) {
   const offsetPct = ((1 - boxRatio) / 2) * 100;
@@ -79,29 +85,30 @@ export function CenteredAoiMap({
         />
         <ViewportBoxTracker boxRatio={boxRatio} onBoundsChange={onBoundsChange} />
 
-        {hotspots.map((hs, idx) => (
-          <CircleMarker
-            key={`${hs.datetime_utc}-${hs.lat}-${hs.lon}-${idx}`}
-            center={[hs.lat, hs.lon]}
-            radius={6}
-            pathOptions={{
-              color: '#991b1b',
-              fillColor: '#ef4444',
-              fillOpacity: 0.85,
-              weight: 1.5,
-            }}
-          >
-            <Popup>
-              <div style={{ fontSize: '12px', lineHeight: 1.4 }}>
-                <strong>Satellite:</strong> {hs.satellite} ({hs.day_night})<br />
-                <strong>UTC:</strong> {hs.datetime_utc}<br />
-                <strong>FRP:</strong> {hs.frp} MW<br />
-                <strong>Confidence:</strong> {hs.confidence}<br />
-                <strong>Coords:</strong> {hs.lat}, {hs.lon}
-              </div>
-            </Popup>
-          </CircleMarker>
-        ))}
+        {hotspots.map((hs, idx) => {
+          const isSelected =
+            selectedHotspot !== null &&
+            selectedHotspot.lat === hs.lat &&
+            selectedHotspot.lon === hs.lon &&
+            selectedHotspot.datetime_utc === hs.datetime_utc;
+
+          return (
+            <CircleMarker
+              key={`${hs.datetime_utc}-${hs.lat}-${hs.lon}-${idx}`}
+              center={[hs.lat, hs.lon]}
+              radius={isSelected ? 9 : 6}
+              eventHandlers={{
+                click: () => onSelectHotspot?.(hs),
+              }}
+              pathOptions={{
+                color: isSelected ? '#0f172a' : '#991b1b',
+                fillColor: '#ef4444',
+                fillOpacity: isSelected ? 1.0 : 0.85,
+                weight: isSelected ? 3 : 1.5,
+              }}
+            />
+          );
+        })}
       </MapContainer>
 
       {/* Fixed Centered Orange AOI Box Overlay (pointerEvents: 'none' lets map drag freely underneath) */}

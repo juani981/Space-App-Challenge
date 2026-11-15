@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { UnifiedHotspot } from '../services/apiClient';
 
 export interface HotspotSidePanelProps {
@@ -14,6 +15,8 @@ export function HotspotSidePanel({
   totalHotspots,
   selectedHotspot,
 }: HotspotSidePanelProps) {
+  const [isAnalysisOpen, setIsAnalysisOpen] = useState<boolean>(true);
+
   return (
     <aside
       style={{
@@ -211,6 +214,86 @@ export function HotspotSidePanel({
               <strong style={{ color: '#0f172a' }}>
                 {selectedHotspot.fire_type !== null ? `Tipo ${selectedHotspot.fire_type}` : 'N/A'}
               </strong>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* SECCIÓN C: Desplegable para Datos Procesados del Otro Equipo (WIP / No definidos aún) */}
+      <section
+        style={{
+          background: '#ffffff',
+          border: '1px solid #cbd5e1',
+          borderRadius: '8px',
+          overflow: 'hidden',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setIsAnalysisOpen((prev) => !prev)}
+          style={{
+            width: '100%',
+            padding: '12px 14px',
+            background: '#f1f5f9',
+            border: 'none',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            cursor: 'pointer',
+            textAlign: 'left',
+          }}
+        >
+          <div>
+            <strong style={{ fontSize: '13px', color: '#0f172a', display: 'block' }}>
+              Análisis Procesado del Punto (Equipo de Datos)
+            </strong>
+            <span style={{ fontSize: '11px', color: '#64748b' }}>
+              Métricas avanzadas y armonización en desarrollo (WIP)
+            </span>
+          </div>
+          <span style={{ fontSize: '14px', color: '#475569', fontWeight: 700 }}>
+            {isAnalysisOpen ? '▼' : '▶'}
+          </span>
+        </button>
+
+        {isAnalysisOpen && (
+          <div style={{ padding: '14px', borderTop: '1px solid #e2e8f0', fontSize: '12px', color: '#475569' }}>
+            <p style={{ margin: '0 0 10px 0', lineHeight: 1.4 }}>
+              Espacio reservado para los indicadores estadísticos y de calibración que el equipo de análisis entregará sobre el punto seleccionado:
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {[
+                { label: 'Factor de Armonización Sensor (MODIS/VIIRS)', value: 'Pendiente de definición (WIP)' },
+                { label: 'Percentil Histórico en Celda Espacial', value: 'Pendiente de definición (WIP)' },
+                { label: 'Índice de Anomalía Estacional Local', value: 'Pendiente de definición (WIP)' },
+                { label: 'Recurrencia / Persistencia del Foco', value: 'Pendiente de definición (WIP)' },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  style={{
+                    padding: '8px 10px',
+                    background: '#f8fafc',
+                    border: '1px dashed #cbd5e1',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <span style={{ color: '#334155', fontWeight: 500 }}>{item.label}</span>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      color: '#64748b',
+                      fontStyle: 'italic',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {selectedHotspot ? item.value : 'Sin punto seleccionado'}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         )}
