@@ -3,9 +3,12 @@ import { CenteredAoiMap, type MapRenderMode } from './components/CenteredAoiMap'
 import { HotspotSidePanel } from './components/HotspotSidePanel';
 import {
   fetchAoi,
+  fetchCellMonthAoi,
   type AoiBounds,
   type AoiResponse,
   type CalibrationMode,
+  type CellMonthAoiResponse,
+  type CellMonthMetric,
   type UnifiedHotspot,
 } from './services/apiClient';
 import { LanguageProvider, useLanguage } from './i18n/LanguageContext';
@@ -30,8 +33,10 @@ function AppContent() {
   const [endDate, setEndDate] = useState<string>('2024-12-31');
   const [calibrationMode, setCalibrationMode] = useState<CalibrationMode>('area_weighted');
   const [mapRenderMode, setMapRenderMode] = useState<MapRenderMode>('harmonized');
+  const [cellMonthMetric, setCellMonthMetric] = useState<CellMonthMetric>('n_eq');
 
   const [backendData, setBackendData] = useState<AoiResponse | null>(null);
+  const [cellMonthData, setCellMonthData] = useState<CellMonthAoiResponse | null>(null);
   const [worldHotspots, setWorldHotspots] = useState<UnifiedHotspot[]>([]);
   const [selectedHotspot, setSelectedHotspot] = useState<UnifiedHotspot | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -46,6 +51,7 @@ function AppContent() {
       end = endDate,
       calMode = calibrationMode,
       resetWorldCache = false,
+      cmMetric = cellMonthMetric,
     ) => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -56,13 +62,30 @@ function AppContent() {
       setIsLoading(true);
       setErrorMsg(null);
       try {
-        const res = await fetchAoi(targetBounds, {
-          startDate: start,
-          endDate: end,
-          calibrationMode: calMode,
-          signal: controller.signal,
-        });
+        const [aoiResult, cellMonthResult] = await Promise.allSettled([
+          fetchAoi(targetBounds, {
+            startDate: start,
+            endDate: end,
+            calibrationMode: calMode,
+            signal: controller.signal,
+          }),
+          fetchCellMonthAoi(targetBounds, {
+            startDate: start,
+            endDate: end,
+            metric: cmMetric,
+            signal: controller.signal,
+          }),
+        ]);
+
+        if (aoiResult.status === 'rejected') {
+          throw aoiResult.reason;
+        }
+        const res = aoiResult.value;
         setBackendData(res);
+
+        if (cellMonthResult.status === 'fulfilled') {
+          setCellMonthData(cellMonthResult.value);
+        }
 
         // Merge newly lazy-loaded viewport hotspots into the progressive world map cache
         setWorldHotspots((prev) => {
@@ -93,7 +116,7 @@ function AppContent() {
         }
       }
     },
-    [bounds, startDate, endDate, calibrationMode]
+    [bounds, startDate, endDate, calibrationMode, cellMonthMetric]
   );
 
   // Automatic debounced lazy-loading whenever the user pans/zooms the map viewport
@@ -115,6 +138,11 @@ function AppContent() {
     setCalibrationMode(newMode);
     setSelectedHotspot(null);
     executeQuery(bounds, startDate, endDate, newMode, true);
+  };
+
+  const handleCellMonthMetricChange = (newMetric: CellMonthMetric) => {
+    setCellMonthMetric(newMetric);
+    executeQuery(bounds, startDate, endDate, calibrationMode, false, newMetric);
   };
 
   const localizedStatus = isLoading
@@ -219,6 +247,9 @@ function AppContent() {
           onCalibrationModeChange={handleCalibrationModeChange}
           onRefresh={() => executeQuery(bounds, startDate, endDate, calibrationMode, false)}
           isLoading={isLoading}
+          cellMonthData={cellMonthData}
+          cellMonthMetric={cellMonthMetric}
+          onCellMonthMetricChange={handleCellMonthMetricChange}
         />
       </div>
     </div>

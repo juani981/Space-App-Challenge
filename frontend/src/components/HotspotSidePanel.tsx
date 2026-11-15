@@ -1,6 +1,14 @@
 import { useState } from 'react';
-import type { AoiBounds, CalibrationMode, MonthlyCalendarCell, UnifiedHotspot } from '../services/apiClient';
+import type {
+  AoiBounds,
+  CalibrationMode,
+  CellMonthAoiResponse,
+  CellMonthMetric,
+  MonthlyCalendarCell,
+  UnifiedHotspot,
+} from '../services/apiClient';
 import type { MapRenderMode } from './CenteredAoiMap';
+import { CellMonthPanel } from './CellMonthPanel';
 import { InteractiveCalendar } from './InteractiveCalendar';
 import {
   CANONICAL_ATTRIBUTES_CONFIG,
@@ -27,6 +35,9 @@ export interface HotspotSidePanelProps {
   onCalibrationModeChange: (mode: CalibrationMode) => void;
   onRefresh: () => void;
   isLoading?: boolean;
+  cellMonthData?: CellMonthAoiResponse | null;
+  cellMonthMetric?: CellMonthMetric;
+  onCellMonthMetricChange?: (metric: CellMonthMetric) => void;
 }
 
 export function HotspotSidePanel({
@@ -45,6 +56,9 @@ export function HotspotSidePanel({
   onCalibrationModeChange,
   onRefresh,
   isLoading = false,
+  cellMonthData = null,
+  cellMonthMetric = 'n_eq',
+  onCellMonthMetricChange,
 }: HotspotSidePanelProps) {
   const { lang, t } = useLanguage();
   const [isAnalysisOpen, setIsAnalysisOpen] = useState<boolean>(true);
@@ -185,6 +199,17 @@ export function HotspotSidePanel({
         onCalibrationModeChange={onCalibrationModeChange}
         onRefresh={onRefresh}
         isLoading={isLoading}
+      />
+
+      {/* SECCIÓN A2: GRILLA ARMONIZADA 0.25° (harmonized.cell_month 2012-2026) */}
+      <CellMonthPanel
+        bounds={bounds}
+        data={cellMonthData}
+        metric={cellMonthMetric}
+        startDate={startDate}
+        endDate={endDate}
+        onMetricChange={(m) => onCellMonthMetricChange?.(m)}
+        onDateRangeChange={onDateRangeChange}
       />
 
       {/* SECCIÓN B: INSPECCIÓN DECLARATIVA DE LOS 10 CONCEPTOS CANÓNICOS */}
