@@ -1,123 +1,102 @@
 import { useState } from 'react';
-import type { UnifiedHotspot } from '../services/apiClient';
+import type { AoiBounds, CalibrationMode, MonthlyCalendarCell, UnifiedHotspot } from '../services/apiClient';
+import { InteractiveCalendar } from './InteractiveCalendar';
+import {
+  CANONICAL_ATTRIBUTES_CONFIG,
+  DEVELOPER_PANEL_VISUALIZATIONS,
+} from '../config/sidePanelConfig';
+import { VisualizationModuleRenderer } from './visualizations/VisualizationLibrary';
+import type { SidePanelVisualizationContext } from './visualizations/contracts';
 
 export interface HotspotSidePanelProps {
   status: string;
   totalHotspots: number;
+  hotspots: UnifiedHotspot[];
   selectedHotspot: UnifiedHotspot | null;
+  bounds: AoiBounds;
+  calendarCells: MonthlyCalendarCell[];
+  startDate: string;
+  endDate: string;
+  calibrationMode: CalibrationMode;
+  onDateRangeChange: (start: string, end: string) => void;
+  onCalibrationModeChange: (mode: CalibrationMode) => void;
+  onRefresh: () => void;
+  isLoading?: boolean;
 }
-
-const MONTHS_MOCK = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-const MOCK_INTENSITIES = [0.1, 0.15, 0.2, 0.25, 0.4, 0.55, 0.8, 1.0, 0.85, 0.45, 0.2, 0.12];
 
 export function HotspotSidePanel({
   status,
   totalHotspots,
+  hotspots,
   selectedHotspot,
+  bounds,
+  calendarCells,
+  startDate,
+  endDate,
+  calibrationMode,
+  onDateRangeChange,
+  onCalibrationModeChange,
+  onRefresh,
+  isLoading = false,
 }: HotspotSidePanelProps) {
   const [isAnalysisOpen, setIsAnalysisOpen] = useState<boolean>(true);
+  const activeYear = parseInt(startDate.slice(0, 4), 10) || 2024;
+
+  const vizContext: SidePanelVisualizationContext = {
+    selectedHotspot,
+    hotspots,
+    calendarCells,
+    calibrationMode,
+    activeYear,
+  };
 
   return (
     <aside
       style={{
-        padding: '18px',
+        padding: '16px',
         borderLeft: '1px solid #cbd5e1',
         background: '#f8fafc',
         overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
-        gap: '18px',
+        gap: '16px',
       }}
     >
-      {/* Cabecera de estado */}
+      {/* HEADER & STATUS */}
       <div>
-        <h3 style={{ margin: '0 0 6px 0', color: '#0f172a', fontSize: '17px' }}>
-          Panel de Inspección de Puntos
+        <h3 style={{ margin: '0 0 4px 0', color: '#0f172a', fontSize: '16px' }}>
+          Armonización MODIS & VIIRS — Panel Modular
         </h3>
-        <div style={{ fontSize: '13px', color: '#475569' }}>
-          <strong>Estado:</strong> {status} ({totalHotspots} puntos en el AOI)
+        <div style={{ fontSize: '12px', color: '#475569' }}>
+          <strong>Estado:</strong> {status} ({totalHotspots} focos armonizados en el AOI)
         </div>
       </div>
 
-      {/* SECCIÓN A: Maqueta Visual del Selector de Fechas y Calendario (UI Mock) */}
+      {/* SECCIÓN A: CALENDARIO DE ACTIVIDAD 100% FUNCIONAL */}
+      <InteractiveCalendar
+        bounds={bounds}
+        calendarCells={calendarCells}
+        startDate={startDate}
+        endDate={endDate}
+        calibrationMode={calibrationMode}
+        onDateRangeChange={onDateRangeChange}
+        onCalibrationModeChange={onCalibrationModeChange}
+        onRefresh={onRefresh}
+        isLoading={isLoading}
+      />
+
+      {/* SECCIÓN B: INSPECCIÓN DECLARATIVA DE LOS 10 CONCEPTOS CANÓNICOS */}
       <section
         style={{
           background: '#ffffff',
-          border: '1px solid #e2e8f0',
-          borderRadius: '8px',
-          padding: '14px',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-          <strong style={{ fontSize: '13px', color: '#1e293b' }}>
-            Calendario y Rango de Fechas
-          </strong>
-          <span
-            style={{
-              fontSize: '11px',
-              background: '#fef3c7',
-              color: '#92400e',
-              padding: '2px 6px',
-              borderRadius: '4px',
-              fontWeight: 600,
-            }}
-          >
-            UI Mock (Sin funcionalidad)
-          </span>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-          <label style={{ fontSize: '12px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            Desde
-            <input
-              type="date"
-              defaultValue="2024-08-01"
-              disabled
-              style={{ padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', background: '#f1f5f9', color: '#64748b' }}
-            />
-          </label>
-          <label style={{ fontSize: '12px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            Hasta
-            <input
-              type="date"
-              defaultValue="2024-08-31"
-              disabled
-              style={{ padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', background: '#f1f5f9', color: '#64748b' }}
-            />
-          </label>
-        </div>
-
-        {/* Mini matriz visual de meses (Mock) */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '3px', textAlign: 'center' }}>
-          {MONTHS_MOCK.map((m, i) => (
-            <div key={m} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-              <div
-                style={{
-                  height: '18px',
-                  borderRadius: '3px',
-                  background: `rgba(239, 68, 68, ${MOCK_INTENSITIES[i]})`,
-                  border: i === 7 ? '1.5px solid #991b1b' : '1px solid #e2e8f0',
-                }}
-                title={`${m} (Maqueta visual)`}
-              />
-              <span style={{ fontSize: '9px', color: '#64748b' }}>{m}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* SECCIÓN B: Todos los Datos Disponibles del Punto Seleccionado (10 Atributos) */}
-      <section
-        style={{
-          background: '#ffffff',
-          border: '1px solid #e2e8f0',
+          border: '1px solid #cbd5e1',
           borderRadius: '8px',
           padding: '14px',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <strong style={{ fontSize: '14px', color: '#1e293b' }}>
-            Datos del Punto Seleccionado
+          <strong style={{ fontSize: '13px', color: '#1e293b' }}>
+            Atributos Canónicos del Foco (10 Conceptos)
           </strong>
           {selectedHotspot && (
             <span
@@ -130,7 +109,7 @@ export function HotspotSidePanel({
                 fontWeight: 600,
               }}
             >
-              Satélite {selectedHotspot.satellite}
+              {selectedHotspot.satellite}
             </span>
           )}
         </div>
@@ -138,88 +117,49 @@ export function HotspotSidePanel({
         {!selectedHotspot ? (
           <div
             style={{
-              padding: '20px 12px',
+              padding: '18px 12px',
               textAlign: 'center',
               color: '#64748b',
-              fontSize: '13px',
+              fontSize: '12px',
               background: '#f8fafc',
               borderRadius: '6px',
               border: '1px dashed #cbd5e1',
             }}
           >
-            Haz clic en cualquier <strong>punto rojo</strong> dentro del cuadro naranja en el mapa para inspeccionar todos sus atributos.
+            Haz clic sobre cualquier <strong>foco en el mapa</strong> para inspeccionar sus atributos canónicos y calibración.
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '13px' }}>
-            <div style={{ gridColumn: '1 / -1', background: '#f8fafc', padding: '8px 10px', borderRadius: '6px' }}>
-              <div style={{ fontSize: '11px', color: '#64748b' }}>1. Fecha y Hora UTC (datetime_utc)</div>
-              <strong style={{ color: '#0f172a', fontFamily: 'monospace' }}>{selectedHotspot.datetime_utc}</strong>
-            </div>
-
-            <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '6px' }}>
-              <div style={{ fontSize: '11px', color: '#64748b' }}>2. Satélite (satellite)</div>
-              <strong style={{ color: '#0f172a' }}>{selectedHotspot.satellite}</strong>
-            </div>
-
-            <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '6px' }}>
-              <div style={{ fontSize: '11px', color: '#64748b' }}>10. Día / Noche (day_night)</div>
-              <strong style={{ color: '#0f172a' }}>
-                {selectedHotspot.day_night === 'D' ? 'Diurno (D)' : selectedHotspot.day_night === 'N' ? 'Nocturno (N)' : 'N/A'}
-              </strong>
-            </div>
-
-            <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '6px' }}>
-              <div style={{ fontSize: '11px', color: '#64748b' }}>3a. Latitud (lat)</div>
-              <strong style={{ color: '#0f172a', fontFamily: 'monospace' }}>{selectedHotspot.lat}°</strong>
-            </div>
-
-            <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '6px' }}>
-              <div style={{ fontSize: '11px', color: '#64748b' }}>3b. Longitud (lon)</div>
-              <strong style={{ color: '#0f172a', fontFamily: 'monospace' }}>{selectedHotspot.lon}°</strong>
-            </div>
-
-            <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '6px' }}>
-              <div style={{ fontSize: '11px', color: '#64748b' }}>4. Temperatura 1 / Brillo (temp_1)</div>
-              <strong style={{ color: '#0f172a' }}>
-                {selectedHotspot.temp_1 !== null ? `${selectedHotspot.temp_1} K` : 'N/A'}
-              </strong>
-            </div>
-
-            <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '6px' }}>
-              <div style={{ fontSize: '11px', color: '#64748b' }}>5. Temperatura 2 (temp_2)</div>
-              <strong style={{ color: '#0f172a' }}>
-                {selectedHotspot.temp_2 !== null ? `${selectedHotspot.temp_2} K` : 'N/A'}
-              </strong>
-            </div>
-
-            <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '6px' }}>
-              <div style={{ fontSize: '11px', color: '#64748b' }}>6. Geometría Píxel (pixel_geom)</div>
-              <strong style={{ color: '#0f172a' }}>
-                {selectedHotspot.pixel_geom !== null ? `${selectedHotspot.pixel_geom} km²` : 'N/A'}
-              </strong>
-            </div>
-
-            <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '6px' }}>
-              <div style={{ fontSize: '11px', color: '#64748b' }}>7. Potencia Radiativa (frp)</div>
-              <strong style={{ color: '#dc2626' }}>{selectedHotspot.frp} MW</strong>
-            </div>
-
-            <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '6px' }}>
-              <div style={{ fontSize: '11px', color: '#64748b' }}>8. Confianza (confidence)</div>
-              <strong style={{ color: '#0f172a', textTransform: 'capitalize' }}>{selectedHotspot.confidence}</strong>
-            </div>
-
-            <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '6px' }}>
-              <div style={{ fontSize: '11px', color: '#64748b' }}>9. Tipo de Anomalía (fire_type)</div>
-              <strong style={{ color: '#0f172a' }}>
-                {selectedHotspot.fire_type !== null ? `Tipo ${selectedHotspot.fire_type}` : 'N/A'}
-              </strong>
-            </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
+            {CANONICAL_ATTRIBUTES_CONFIG.map((attr) => (
+              <div
+                key={String(attr.key)}
+                style={{
+                  gridColumn: attr.fullWidth ? '1 / -1' : undefined,
+                  background: '#f8fafc',
+                  padding: '7px 9px',
+                  borderRadius: '5px',
+                  border: '1px solid #f1f5f9',
+                }}
+              >
+                <div style={{ fontSize: '10px', color: '#64748b' }}>{attr.label}</div>
+                <strong
+                  style={{
+                    color: attr.highlight ? '#dc2626' : '#0f172a',
+                    fontFamily:
+                      attr.key === 'datetime_utc' || attr.key === 'lat' || attr.key === 'lon'
+                        ? 'monospace'
+                        : 'inherit',
+                  }}
+                >
+                  {attr.format(selectedHotspot)}
+                </strong>
+              </div>
+            ))}
           </div>
         )}
       </section>
 
-      {/* SECCIÓN C: Desplegable para Datos Procesados del Otro Equipo (WIP / No definidos aún) */}
+      {/* SECCIÓN C: MÓDULOS DE INTERFAZ DE VISUALIZACIÓN (CONTROLADOS POR sidePanelConfig.ts) */}
       <section
         style={{
           background: '#ffffff',
@@ -245,10 +185,10 @@ export function HotspotSidePanel({
         >
           <div>
             <strong style={{ fontSize: '13px', color: '#0f172a', display: 'block' }}>
-              Análisis Procesado del Punto (Equipo de Datos)
+              Módulos de Visualización y Datos Procesados
             </strong>
             <span style={{ fontSize: '11px', color: '#64748b' }}>
-              Métricas avanzadas y armonización en desarrollo (WIP)
+              Configurables por código en <code>src/config/sidePanelConfig.ts</code>
             </span>
           </div>
           <span style={{ fontSize: '14px', color: '#475569', fontWeight: 700 }}>
@@ -257,44 +197,23 @@ export function HotspotSidePanel({
         </button>
 
         {isAnalysisOpen && (
-          <div style={{ padding: '14px', borderTop: '1px solid #e2e8f0', fontSize: '12px', color: '#475569' }}>
-            <p style={{ margin: '0 0 10px 0', lineHeight: 1.4 }}>
-              Espacio reservado para los indicadores estadísticos y de calibración que el equipo de análisis entregará sobre el punto seleccionado:
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {[
-                { label: 'Factor de Armonización Sensor (MODIS/VIIRS)', value: 'Pendiente de definición (WIP)' },
-                { label: 'Percentil Histórico en Celda Espacial', value: 'Pendiente de definición (WIP)' },
-                { label: 'Índice de Anomalía Estacional Local', value: 'Pendiente de definición (WIP)' },
-                { label: 'Recurrencia / Persistencia del Foco', value: 'Pendiente de definición (WIP)' },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  style={{
-                    padding: '8px 10px',
-                    background: '#f8fafc',
-                    border: '1px dashed #cbd5e1',
-                    borderRadius: '6px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    gap: '8px',
-                  }}
-                >
-                  <span style={{ color: '#334155', fontWeight: 500 }}>{item.label}</span>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      color: '#64748b',
-                      fontStyle: 'italic',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {selectedHotspot ? item.value : 'Sin punto seleccionado'}
-                  </span>
-                </div>
-              ))}
-            </div>
+          <div
+            style={{
+              padding: '12px',
+              borderTop: '1px solid #e2e8f0',
+              background: '#f8fafc',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+            }}
+          >
+            {DEVELOPER_PANEL_VISUALIZATIONS.map((slot) => (
+              <VisualizationModuleRenderer
+                key={slot.id}
+                slot={slot}
+                context={vizContext}
+              />
+            ))}
           </div>
         )}
       </section>
