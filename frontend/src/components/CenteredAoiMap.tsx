@@ -26,22 +26,32 @@ export interface CenteredAoiMapProps {
 }
 
 /**
- * Tracks the full visible map viewport rectangle (`map.getBounds()`) and
- * handles automatic browser Geolocation centering on startup or manual request.
+ * Tracks the full visible map viewport rectangle (`map.getBounds()`), ensures Leaflet's
+ * container size is invalidated before centering (`map.invalidateSize()`), and handles
+ * automatic browser Geolocation centering + manual location picking on the map.
  */
 function ViewportAndGeolocationController({
   onBoundsChange,
   onUserLocationFound,
+  onGeoError,
   locateTrigger,
+  isPickingLocation,
+  onLocationPicked,
 }: {
   onBoundsChange: (bounds: AoiBounds) => void;
-  onUserLocationFound: (coords: [number, number]) => void;
+  onUserLocationFound: (coords: [number, number], accuracyMeters?: number) => void;
+  onGeoError: (hasError: boolean) => void;
   locateTrigger: number;
+  isPickingLocation: boolean;
+  onLocationPicked: (coords: [number, number]) => void;
 }) {
   const map = useMap();
   const hasRequestedInitialGeo = useRef(false);
 
   const emitViewportBounds = useCallback(() => {
+    const size = map.getSize();
+    if (size.x === 0 || size.y === 0) return;
+
     const b = map.getBounds();
     const sw = b.getSouthWest();
     const ne = b.getNorthEast();
@@ -53,40 +63,89 @@ function ViewportAndGeolocationController({
     });
   }, [map, onBoundsChange]);
 
+  /**
+   * Centers the map accurately at [lat, lon] after forcing Leaflet to recalculate
+   * its container dimensions (`invalidateSize`), preventing top-left/offset bugs.
+   */
+  const centerMapAccurately = useCallback(
+    (lat: number, lon: number, targetZoom = 8) => {
+      // Wait for layout frame so CSS grid/flexbox dimensions are final
+      requestAnimationFrame(() => {
+        map.invalidateSize({ pan: false });
+        map.setView([lat, lon], targetZoom, { animate: false });
+        // Second pass after 80ms in case fonts/side-panel scrollbar shifted container width
+        window.setTimeout(() => {
+          map.invalidateSize({ pan: false });
+          map.setView([lat, lon], targetZoom, { animate: false });
+          emitViewportBounds();
+        }, 80);
+      });
+    },
+    [map, emitViewportBounds],
+  );
+
   const requestBrowserLocation = useCallback(() => {
     if (!('geolocation' in navigator)) {
+      onGeoError(true);
       emitViewportBounds();
       return;
     }
 
+    onGeoError(false);
+
+    const handleSuccess = (pos: GeolocationPosition) => {
+      const lat = Number(pos.coords.latitude.toFixed(4));
+      const lon = Number(pos.coords.longitude.toFixed(4));
+      onUserLocationFound([lat, lon], pos.coords.accuracy);
+      centerMapAccurately(lat, lon, 8);
+    };
+
+    // First attempt: High-accuracy GPS / Wi-Fi triangulation with fresh reading (maximumAge: 0)
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = Number(pos.coords.latitude.toFixed(4));
-        const lon = Number(pos.coords.longitude.toFixed(4));
-        onUserLocationFound([lat, lon]);
-        map.setView([lat, lon], 7, { animate: true });
-        // setView triggers moveend/zoomend, which calls emitViewportBounds
-      },
+      handleSuccess,
       () => {
-        // User denied permission or geolocation timed out: query default viewport
-        emitViewportBounds();
+        // Fallback attempt: Coarse network geolocation if high-accuracy times out on desktop
+        navigator.geolocation.getCurrentPosition(
+          handleSuccess,
+          () => {
+            onGeoError(true);
+            emitViewportBounds();
+          },
+          {
+            enableHighAccuracy: false,
+            timeout: 8000,
+            maximumAge: 0,
+          },
+        );
       },
       {
-        enableHighAccuracy: false,
-        timeout: 6000,
-        maximumAge: 60000,
+        enableHighAccuracy: true,
+        timeout: 8000,
+        maximumAge: 0,
       },
     );
-  }, [map, emitViewportBounds, onUserLocationFound]);
+  }, [emitViewportBounds, onUserLocationFound, onGeoError, centerMapAccurately]);
 
-  // Initial mount: emit initial bounds immediately and request browser geolocation permission
+  // Keep Leaflet container size synchronized with CSS Grid/Flexbox via ResizeObserver
+  useEffect(() => {
+    const container = map.getContainer();
+    const observer = new ResizeObserver(() => {
+      map.invalidateSize({ pan: false });
+      emitViewportBounds();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [map, emitViewportBounds]);
+
+  // Initial mount: invalidate size, emit initial bounds, and request browser geolocation
   useEffect(() => {
     if (!hasRequestedInitialGeo.current) {
       hasRequestedInitialGeo.current = true;
+      map.invalidateSize({ pan: false });
       emitViewportBounds();
       requestBrowserLocation();
     }
-  }, [emitViewportBounds, requestBrowserLocation]);
+  }, [map, emitViewportBounds, requestBrowserLocation]);
 
   // Manual re-center when user clicks "My Location / Mi Ubicación"
   useEffect(() => {
@@ -99,6 +158,14 @@ function ViewportAndGeolocationController({
     moveend: emitViewportBounds,
     zoomend: emitViewportBounds,
     resize: emitViewportBounds,
+    click(e) {
+      if (isPickingLocation) {
+        const lat = Number(e.latlng.lat.toFixed(4));
+        const lon = Number(e.latlng.lng.toFixed(4));
+        onLocationPicked([lat, lon]);
+        centerMapAccurately(lat, lon, Math.max(map.getZoom(), 8));
+      }
+    },
   });
 
   return null;
@@ -116,6 +183,8 @@ export function CenteredAoiMap({
   const [internalMode, setInternalMode] = useState<MapRenderMode>('harmonized');
   const [userCoords, setUserCoords] = useState<[number, number] | null>(null);
   const [locateTrigger, setLocateTrigger] = useState<number>(0);
+  const [isPickingLocation, setIsPickingLocation] = useState<boolean>(false);
+  const [geoHasError, setGeoHasError] = useState<boolean>(false);
 
   const activeMode = controlledMode ?? internalMode;
 
@@ -130,7 +199,14 @@ export function CenteredAoiMap({
     : hotspots;
 
   return (
-    <div style={{ position: 'relative', height: '100%', width: '100%' }}>
+    <div
+      style={{
+        position: 'relative',
+        height: '100%',
+        width: '100%',
+        cursor: isPickingLocation ? 'crosshair' : 'grab',
+      }}
+    >
       <MapContainer center={[-32.0, -61.5]} zoom={6} style={{ height: '100%', width: '100%' }}>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -138,25 +214,35 @@ export function CenteredAoiMap({
         />
         <ViewportAndGeolocationController
           onBoundsChange={onBoundsChange}
-          onUserLocationFound={setUserCoords}
+          onUserLocationFound={(coords) => {
+            setUserCoords(coords);
+            setGeoHasError(false);
+          }}
+          onGeoError={setGeoHasError}
           locateTrigger={locateTrigger}
+          isPickingLocation={isPickingLocation}
+          onLocationPicked={(coords) => {
+            setUserCoords(coords);
+            setIsPickingLocation(false);
+            setGeoHasError(false);
+          }}
         />
 
-        {/* USER GPS LOCATION MARKER (if permission granted) */}
+        {/* USER LOCATION MARKER (centered via GPS or manual pick) */}
         {userCoords && (
           <CircleMarker
             center={userCoords}
-            radius={8}
+            radius={9}
             pathOptions={{
               color: '#ffffff',
               fillColor: '#0284c7',
               fillOpacity: 0.95,
-              weight: 2.5,
+              weight: 3,
             }}
           >
-            <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
-              <div style={{ fontSize: '11px', fontWeight: 600, color: '#0369a1' }}>
-                📍 {t.userLocationTooltip} ({userCoords[0].toFixed(3)}°, {userCoords[1].toFixed(3)}°)
+            <Tooltip direction="top" offset={[0, -8]} opacity={0.95} permanent>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1' }}>
+                📍 {t.userLocationTooltip}: {userCoords[0].toFixed(4)}°, {userCoords[1].toFixed(4)}°
               </div>
             </Tooltip>
           </CircleMarker>
@@ -259,18 +345,23 @@ export function CenteredAoiMap({
           boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
           padding: '10px 14px',
           border: '1px solid #cbd5e1',
-          maxWidth: '330px',
+          maxWidth: '355px',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-          <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>
-            {t.mapControlTitle}
-          </div>
+        <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>
+          {t.mapControlTitle}
+        </div>
+
+        {/* Geolocation Controls: Auto-GPS + Manual Map Pin */}
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
           <button
             type="button"
-            onClick={() => setLocateTrigger((n) => n + 1)}
+            onClick={() => {
+              setIsPickingLocation(false);
+              setLocateTrigger((n) => n + 1);
+            }}
             style={{
-              padding: '3px 8px',
+              padding: '4px 8px',
               fontSize: '11px',
               fontWeight: 600,
               background: '#f0f9ff',
@@ -283,7 +374,41 @@ export function CenteredAoiMap({
           >
             {t.locateMeBtn}
           </button>
+
+          <button
+            type="button"
+            onClick={() => setIsPickingLocation((prev) => !prev)}
+            style={{
+              padding: '4px 8px',
+              fontSize: '11px',
+              fontWeight: 600,
+              background: isPickingLocation ? '#0284c7' : '#f8fafc',
+              color: isPickingLocation ? '#ffffff' : '#334155',
+              border: `1px solid ${isPickingLocation ? '#0369a1' : '#cbd5e1'}`,
+              borderRadius: '5px',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {isPickingLocation ? t.pickLocationActiveBtn : t.pickLocationBtn}
+          </button>
         </div>
+
+        {geoHasError && (
+          <div
+            style={{
+              fontSize: '10px',
+              color: '#b45309',
+              background: '#fffbeb',
+              border: '1px solid #fde68a',
+              borderRadius: '4px',
+              padding: '4px 6px',
+              marginBottom: '8px',
+            }}
+          >
+            ⚠️ {t.geoErrorNotice}
+          </div>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <label
