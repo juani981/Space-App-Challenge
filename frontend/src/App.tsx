@@ -34,6 +34,7 @@ function AppContent() {
   const [calibrationMode, setCalibrationMode] = useState<CalibrationMode>('area_weighted');
   const [mapRenderMode, setMapRenderMode] = useState<MapRenderMode>('harmonized');
   const [cellMonthMetric, setCellMonthMetric] = useState<CellMonthMetric>('n_eq');
+  const [showCellGrid, setShowCellGrid] = useState<boolean>(true);
 
   const [backendData, setBackendData] = useState<AoiResponse | null>(null);
   const [cellMonthData, setCellMonthData] = useState<CellMonthAoiResponse | null>(null);
@@ -225,6 +226,10 @@ function AppContent() {
             onSelectHotspot={setSelectedHotspot}
             renderMode={mapRenderMode}
             onRenderModeChange={setMapRenderMode}
+            cellMonthCells={cellMonthData?.cells ?? []}
+            cellMonthMetric={cellMonthMetric}
+            showCellGrid={showCellGrid}
+            onToggleCellGrid={() => setShowCellGrid((p) => !p)}
           />
         </div>
       </div>
