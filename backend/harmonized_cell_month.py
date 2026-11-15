@@ -2,10 +2,9 @@
 Domain models, grid geometry, quality-flag bitwise helpers, and anomaly engine
 for the team's harmonized global monthly table: `harmonized.cell_month`.
 
-Based strictly on `docs/DOCUMENTACION_TABLA_ARMONIZADA.md` (method_version: v0.1-provisional).
-Pending items awaiting DDL / Phase-1 confirmation from Teammates 1 & 2 are
-explicitly isolated inside `PENDING_TEAM_CONFIRMATION` so they can be swapped
-in a single localized edit without touching downstream consumers.
+Aligned strictly with the verified v0.2 PostgreSQL contract in
+`docs/CONTRATO_DATOS_WEB_RESPUESTA_V02.md` (`method_version = 'v0.2'`,
+range `2012-01-01..2026-08-01`, `south_to_north` row origin, `EXCLUDE_BASELINE_MASK = 29`).
 """
 
 from __future__ import annotations
@@ -18,77 +17,145 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 # =====================================================================
-# GLOBAL GRID CONSTANTS (CONFIRMED IN DOCUMENTACION_TABLA_ARMONIZADA.md)
+# GLOBAL GRID CONSTANTS & OPERATIONAL LIMITS (VERIFIED v0.2)
 # =====================================================================
 GRID_ROWS = 720
 GRID_COLS = 1440
 TOTAL_GRID_CELLS = GRID_ROWS * GRID_COLS  # 1,036,800 global cells
 GRID_STEP_DEG = 0.25
+GRID_STEP_1DEG = 1.0
+GRID_COLS_1DEG = 360
+GRID_ROWS_1DEG = 180
 EARTH_RADIUS_KM = 6371.0
 
-DEFAULT_METHOD_VERSION = "v0.1-provisional"
+DEFAULT_METHOD_VERSION = "v0.2"
 MIN_BASELINE_YEARS = 10
 MAD_NORMAL_CONSTANT = 1.4826
+
+SERIES_START_MONTH = date(2012, 1, 1)
+SERIES_END_MONTH = date(2026, 8, 1)
+TOTAL_SERIES_MONTHS = 176
+
+# Verified performance & safety caps (CONTRATO_DATOS_WEB_RESPUESTA_V02.md Sec 5, 6c, 6d)
+MAX_CALENDAR_CELLS = 50_000
+MAP_1DEG_CELL_THRESHOLD = 20_000
+CSV_MAX_ROWS = 1_000_000
+MIN_RECOMMENDED_AOI_CELLS = 4
+
+AQUA_2026_08_DRIFT_WARNING_ES = (
+    "Ago-2026 usa solo MODIS-Aqua, que por su deriva orbital detecta ~10 % menos "
+    "que la serie armonizada; el valor tiende a subestimar."
+)
+LOW_CONFIDENCE_BAND_WARNING_ES = (
+    "El AOI intersecta bandas extremas (-60°, 70° o polares) con calibración de baja confianza "
+    "(bit 7): valores absolutos poco confiables; la anomalía por percentil no se ve afectada por un sesgo constante."
+)
 
 RowOrigin = Literal["north_to_south", "south_to_north"]
 LonConvention = Literal["signed_180", "unsigned_360"]
 
+REF_SAT_LABELS: dict[int, str] = {
+    2: "Aqua",
+    3: "SNPP",
+    4: "N20",
+    5: "N21",
+}
+
+REF_SAT_SENSORS_V02: dict[int, str] = {
+    2: "Aqua (solo MODIS / deriva)",
+    3: "SNPP",
+    4: "N20",
+    5: "N21 (respaldo de N20)",
+}
+
 # =====================================================================
-# PENDING CONFIRMATIONS (Sección 6 de DOCUMENTACION_TABLA_ARMONIZADA.md)
-# Update these values once the other team returns the exact DDL & Phase-1 spec.
+# CONFIRMED v0.2 CONTRACT REGISTRY
 # =====================================================================
-PENDING_TEAM_CONFIRMATION: dict[str, Any] = {
-    "awaiting_version": "v0.2",               # Reply requested in CONTRATO_DATOS_WEB.md after v0.2 closes
-    "cell_id_row_origin": "north_to_south",   # Provisional: confirm row=0 (+89.875 vs -89.875) + 3 test cases
-    "lon_convention": "signed_180",           # Provisional: [-180, 180] vs [0, 360]
-    "quality_flag_bitmask_confirmed": False,  # Confirm exact bit exponents & month-level table
-    "ref_sat_modis_only_value": None,         # Confirm NULL vs special token in 2026-08
-    "inactive_satellite_zero_or_null": 0,     # Confirm 0 vs NULL for n_*/frp_* before sensor launch
-    "frp_matches_count_filters": True,        # Confirm type=0 & no-low-conf on frp_*
-    "source_postgres_version": None,          # Confirm compatibility with PostgreSQL 18 restore
+TEAM_CONTRACT_V02: dict[str, Any] = {
+    "method_version": DEFAULT_METHOD_VERSION,
+    "cell_id_row_origin": "south_to_north",   # fila 0 = Sur (lat_center = -89.875)
+    "lon_convention": "signed_180",           # col 0 = lon_center = -179.875
+    "quality_flag_bitmask_confirmed": True,
+    "exclude_baseline_mask": 29,              # bits 0, 2, 3, 4 (1 + 4 + 8 + 16)
+    "ref_sat_codes": REF_SAT_LABELS,
+    "inactive_satellite_zero_or_null": 0,     # NOT NULL >= 0 before launch or no detections
+    "frp_matches_count_filters": True,
+    "source_postgres_version": "18",
+    "period": "2012-01..2026-08",
+    "max_calendar_cells": MAX_CALENDAR_CELLS,
+    "map_1deg_cell_threshold": MAP_1DEG_CELL_THRESHOLD,
+    "csv_max_rows": CSV_MAX_ROWS,
+    "low_confidence_bands": ["-60", "70", "polar"],
     "auxiliary_tables": {
-        "grid_areas_table": None,
-        "monthly_quality_table": None,
-        "reference_plan_table": None,
-        "gaps_catalog_table": None,
-        "global_month_table": None,
-        "map_layer_table": None,
-        "one_degree_table": None,
-        "climatology_table": None,
+        "monthly_quality_table": "harmonized.reference_plan",
+        "reference_plan_table": "harmonized.reference_plan",
+        "map_layer_table": "harmonized.map_month",
+        "quality_bits_table": "harmonized.quality_bits",
+        "dataset_metadata_table": "harmonized.dataset_metadata",
+        "gaps_catalog_table": "harmonized.known_gap",
+        "sat_month_quality_table": "harmonized.sat_month_quality",
+        "global_month_table": "harmonized.global_month",
+        "dim_satellite_table": "harmonized.dim_satellite",
     },
 }
+# Alias preserved for backwards module compatibility
+PENDING_TEAM_CONFIRMATION = TEAM_CONTRACT_V02
 
 
 class QualityFlagBits(IntFlag):
     """
-    8-bit quality bitmask for `harmonized.cell_month.quality_flag` (`smallint`).
-    PROVISIONAL bit positions pending Phase 1 design confirmation.
+    8-bit quality bitmask verified in v0.2 (`harmonized.quality_bits`).
     """
 
     NONE = 0
-    PARTIAL_MONTH = 1 << 0             # e.g., 2012-01 (S-NPP started Jan 20)
-    LAST_MONTH = 1 << 1                # e.g., 2026-08 (last month of series)
-    MODIS_ONLY = 1 << 2                # No VIIRS available (Aqua direct, subject to drift)
-    GAPS = 1 << 3                      # Reference satellite had >= 5 missing days in month
-    FALLBACK = 1 << 4                  # Next VIIRS satellite in chain used due to gap
-    PROVISIONAL_CALIBRATION = 1 << 5   # Calculated with v0.1 calibration
+    VIIRS_PARCIAL = 1 << 0             # 1: ene-2012 (S-NPP inició el 20-ene)
+    ULTIMO_MES_STANDARD = 1 << 1       # 2: jul-2026 (último mes standard VIIRS)
+    SOLO_MODIS_DERIVA = 1 << 2         # 4: ago-2026 (n_eq = N_Aqua directo; subestima ~10%)
+    REF_INCOMPLETA_HUECOS = 1 << 3     # 8: >=3 días afectados con faltantes o catálogo de huecos
+    REF_INCOMPLETA_CAIDAS = 1 << 4     # 16: >=3 días afectados con caídas (<30%) o minutos bajos
+    CAIDA_SIMULTANEA = 1 << 5          # 32: definido; sin meses marcados actualmente (in_use=false)
+    REFERENCIA_RESPALDO = 1 << 6       # 64: respaldo de cadena usado (jul-2023 NOAA-21)
+    CALIBRACION_BAJA_CONF = 1 << 7     # 128: nivel fila en bandas extremas (-60°, 70°, polares)
+
+    # Clear semantic aliases
+    PARTIAL_MONTH = VIIRS_PARCIAL
+    LAST_MONTH = ULTIMO_MES_STANDARD
+    MODIS_ONLY = SOLO_MODIS_DERIVA
+    GAPS = REF_INCOMPLETA_HUECOS
+    DROPS = REF_INCOMPLETA_CAIDAS
+    FALLBACK = REFERENCIA_RESPALDO
+    LOW_CONFIDENCE_CALIBRATION = CALIBRACION_BAJA_CONF
 
 
-# Baseline anomaly exclusion mask (Section 3: exclude gaps >= 5d, MODIS-only, last month, partial month)
-BASELINE_EXCLUDE_MASK = (
-    QualityFlagBits.GAPS
-    | QualityFlagBits.MODIS_ONLY
-    | QualityFlagBits.LAST_MONTH
-    | QualityFlagBits.PARTIAL_MONTH
+# Baseline anomaly exclusion mask: bits 0, 2, 3, 4 (1 + 4 + 8 + 16 = 29)
+BASELINE_EXCLUDE_MASK = int(
+    QualityFlagBits.VIIRS_PARCIAL
+    | QualityFlagBits.SOLO_MODIS_DERIVA
+    | QualityFlagBits.REF_INCOMPLETA_HUECOS
+    | QualityFlagBits.REF_INCOMPLETA_CAIDAS
 )
+EXCLUDE_BASELINE_MASK = BASELINE_EXCLUDE_MASK
 
 QUALITY_FLAG_LABELS_ES: dict[QualityFlagBits, str] = {
-    QualityFlagBits.PARTIAL_MONTH: "Mes parcial",
-    QualityFlagBits.LAST_MONTH: "Último mes de la serie",
-    QualityFlagBits.MODIS_ONLY: "Solo MODIS (Aqua directo)",
-    QualityFlagBits.GAPS: "Huecos (≥ 5 días sin datos)",
-    QualityFlagBits.FALLBACK: "Satélite de respaldo",
-    QualityFlagBits.PROVISIONAL_CALIBRATION: "Calibración provisional (v0.1)",
+    QualityFlagBits.VIIRS_PARCIAL: "VIIRS parcial (ene-2012: inicio 20-ene)",
+    QualityFlagBits.ULTIMO_MES_STANDARD: "Último mes standard del sensor de referencia",
+    QualityFlagBits.SOLO_MODIS_DERIVA: "Solo MODIS-Aqua (deriva orbital, subestima ~10%)",
+    QualityFlagBits.REF_INCOMPLETA_HUECOS: "Referencia incompleta por huecos (≥3 días afectados)",
+    QualityFlagBits.REF_INCOMPLETA_CAIDAS: "Referencia incompleta por caídas / minutos bajos",
+    QualityFlagBits.CAIDA_SIMULTANEA: "Caída simultánea en ≥2 satélites",
+    QualityFlagBits.REFERENCIA_RESPALDO: "Referencia de respaldo (cadena VIIRS, ej. N21)",
+    QualityFlagBits.CALIBRACION_BAJA_CONF: "Calibración de baja confianza (bandas -60°, 70° o polares)",
+}
+
+QUALITY_FLAG_CODES_V02: dict[QualityFlagBits, tuple[str, str, bool]] = {
+    QualityFlagBits.VIIRS_PARCIAL: ("viirs_parcial", "mes", True),
+    QualityFlagBits.ULTIMO_MES_STANDARD: ("ultimo_mes_standard", "mes", False),
+    QualityFlagBits.SOLO_MODIS_DERIVA: ("solo_modis_deriva", "mes", True),
+    QualityFlagBits.REF_INCOMPLETA_HUECOS: ("ref_incompleta_huecos", "mes", True),
+    QualityFlagBits.REF_INCOMPLETA_CAIDAS: ("ref_incompleta_caidas", "mes", True),
+    QualityFlagBits.CAIDA_SIMULTANEA: ("caida_simultanea", "mes", False),
+    QualityFlagBits.REFERENCIA_RESPALDO: ("referencia_respaldo", "mes", False),
+    QualityFlagBits.CALIBRACION_BAJA_CONF: ("calibracion_baja_conf", "fila", False),
 }
 
 
@@ -101,11 +168,20 @@ def bit_or_flags(flags: list[int]) -> int:
 
 
 def decode_quality_flags(flag: int) -> list[dict[str, Any]]:
-    """Decodes an 8-bit `quality_flag` integer into structured flag descriptors."""
+    """Decodes an 8-bit `quality_flag` integer into structured v0.2 flag descriptors."""
     decoded: list[dict[str, Any]] = []
     for bit, label_es in QUALITY_FLAG_LABELS_ES.items():
         if flag & bit:
-            decoded.append({"bit": int(bit), "code": bit.name.lower(), "label_es": label_es})
+            code, scope, excludes_baseline = QUALITY_FLAG_CODES_V02[bit]
+            decoded.append(
+                {
+                    "bit": int(bit),
+                    "code": code,
+                    "scope": scope,
+                    "excludes_baseline": excludes_baseline,
+                    "label_es": label_es,
+                }
+            )
     return decoded
 
 
@@ -125,8 +201,8 @@ class HarmonizedCellMonthRow(BaseModel):
     n_eq: float = Field(ge=0.0, description="Harmonized active fire count (Aqua-equivalent)")
     f_eq: float = Field(ge=0.0, description="Harmonized instantaneous FRP in MW (Aqua-equivalent)")
 
-    # Provenance
-    ref_sat: Optional[str] = None
+    # Provenance (`smallint NOT NULL`: 2=Aqua, 3=SNPP, 4=N20, 5=N21)
+    ref_sat: int = Field(ge=2, le=5)
     sensors: str
 
     # Raw per-satellite counts & FRP (for audit/comparison; NEVER sum VIIRS sensors directly)
@@ -260,11 +336,31 @@ def _lon_span_to_col_ranges(min_lon: float, max_lon: float) -> list[tuple[int, i
 def row_col_to_cell_id(
     south_idx: int,
     col_idx: int,
-    row_origin: RowOrigin = PENDING_TEAM_CONFIRMATION["cell_id_row_origin"],
+    row_origin: RowOrigin = "south_to_north",
 ) -> int:
     """Converts a south-based latitude index (0..719) and column (0..1439) to `cell_id`."""
     row = (GRID_ROWS - 1 - south_idx) if row_origin == "north_to_south" else south_idx
     return row * GRID_COLS + col_idx
+
+
+def cell_id_to_center_and_area(
+    cell_id: int,
+    row_origin: RowOrigin = "south_to_north",
+) -> tuple[float, float, float]:
+    """
+    Converts `cell_id` (0..1036799) to `(lat_center, lon_center, cell_area_km2)`.
+    Matches verified PostgreSQL formula (CONTRATO_DATOS_WEB_RESPUESTA_V02.md Sec 3.1-3.2):
+      fila = cell_id // 1440 (0 = -89.875° Sur), columna = cell_id % 1440 (0 = -179.875° Oeste)
+    """
+    if not (0 <= cell_id < TOTAL_GRID_CELLS):
+        raise ValueError(f"cell_id out of range [0, {TOTAL_GRID_CELLS - 1}]: {cell_id}")
+    raw_row = cell_id // GRID_COLS
+    col_idx = cell_id % GRID_COLS
+    south_idx = (GRID_ROWS - 1 - raw_row) if row_origin == "north_to_south" else raw_row
+    lat_center = -90.0 + (south_idx + 0.5) * GRID_STEP_DEG
+    lon_center = -180.0 + (col_idx + 0.5) * GRID_STEP_DEG
+    area_km2 = spherical_cell_area_km2(lat_center - 0.125, lat_center + 0.125, GRID_STEP_DEG)
+    return lat_center, lon_center, area_km2
 
 
 def bbox_to_grid_indices(
@@ -277,12 +373,36 @@ def bbox_to_grid_indices(
     return _lat_range_to_south_indices(min_lat, max_lat) + (_lon_span_to_col_ranges(min_lon, max_lon),)
 
 
+def aoi_cell_count(
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+) -> int:
+    """Returns total number of 0.25° grid cells inside the bounding box."""
+    s_min, s_max, col_ranges = bbox_to_grid_indices(min_lon, min_lat, max_lon, max_lat)
+    total_cols = sum((c_end - c_start + 1) for c_start, c_end in col_ranges)
+    return (s_max - s_min + 1) * total_cols
+
+
+def cell_touches_low_confidence_band(lat_center: float) -> bool:
+    """True when a cell lies inside extreme v0.2 low-confidence calibration bands (-60°, 70°, polar)."""
+    return lat_center < -50.0 or lat_center >= 70.0
+
+
+def bbox_touches_low_confidence_band(min_lat: float, max_lat: float) -> bool:
+    """True when an AOI overlaps extreme v0.2 calibration bands (-60°, 70°, polar) triggering bit 7."""
+    lo = max(-90.0, min(min_lat, max_lat))
+    hi = min(90.0, max(min_lat, max_lat))
+    return lo < -50.0 or hi >= 70.0
+
+
 def bbox_to_cell_id_ranges(
     min_lon: float,
     min_lat: float,
     max_lon: float,
     max_lat: float,
-    row_origin: RowOrigin = PENDING_TEAM_CONFIRMATION["cell_id_row_origin"],
+    row_origin: RowOrigin = "south_to_north",
 ) -> list[tuple[int, int]]:
     """
     Translates an AOI bounding box into contiguous `(start_cell_id, end_cell_id)` tuples
@@ -299,6 +419,60 @@ def bbox_to_cell_id_ranges(
 
     ranges.sort(key=lambda r: r[0])
     return ranges
+
+
+def aggregate_cells_to_1deg(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Dynamically rolls up 0.25° map cells into 1° × 1° blocks for zoomed-out map rendering
+    (> 20,000 visible cells), matching Sec 6c of `CONTRATO_DATOS_WEB_RESPUESTA_V02.md`:
+      block_id = ((cell_id // 1440) // 4) * 360 + ((cell_id % 1440) // 4)
+    """
+    blocks: dict[int, dict[str, Any]] = {}
+    for cell in cells:
+        cid = int(cell["cell_id"])
+        block_row = (cid // GRID_COLS) // 4
+        block_col = (cid % GRID_COLS) // 4
+        block_id = block_row * GRID_COLS_1DEG + block_col
+
+        lat_center = -90.0 + block_row + 0.5
+        lon_center = -180.0 + block_col + 0.5
+
+        bucket = blocks.get(block_id)
+        if bucket is None:
+            area_1deg_km2 = round(spherical_cell_area_km2(lat_center - 0.5, lat_center + 0.5, GRID_STEP_1DEG), 3)
+            blocks[block_id] = {
+                "cell_id": block_id,
+                "block_id": block_id,
+                "lat_center": round(lat_center, 3),
+                "lon_center": round(lon_center, 3),
+                "cell_area_km2": area_1deg_km2,
+                "n_eq": float(cell.get("n_eq", 0.0)),
+                "f_eq": float(cell.get("f_eq", 0.0)),
+                "n_terra": int(cell.get("n_terra", 0)),
+                "frp_terra": float(cell.get("frp_terra", 0.0)),
+                "quality_flag": int(cell.get("quality_flag", 0)),
+                "active_months": int(cell.get("active_months", 1)),
+                "subcell_count": 1,
+                "resolution_deg": GRID_STEP_1DEG,
+            }
+        else:
+            bucket["n_eq"] += float(cell.get("n_eq", 0.0))
+            bucket["f_eq"] += float(cell.get("f_eq", 0.0))
+            bucket["n_terra"] += int(cell.get("n_terra", 0))
+            bucket["frp_terra"] += float(cell.get("frp_terra", 0.0))
+            bucket["quality_flag"] |= int(cell.get("quality_flag", 0))
+            bucket["active_months"] = max(bucket["active_months"], int(cell.get("active_months", 1)))
+            bucket["subcell_count"] += 1
+
+    rolled_up: list[dict[str, Any]] = []
+    for block_id in sorted(blocks):
+        b = blocks[block_id]
+        b["n_eq"] = round(b["n_eq"], 2)
+        b["f_eq"] = round(b["f_eq"], 2)
+        b["frp_terra"] = round(b["frp_terra"], 2)
+        b["quality_flags_decoded"] = decode_quality_flags(b["quality_flag"])
+        rolled_up.append(b)
+    return rolled_up
 
 
 def compute_aoi_grid_area_km2(
@@ -333,6 +507,65 @@ def iter_calendar_months(start_month: date, end_month: date) -> list[date]:
             m = 1
             y += 1
     return months
+
+
+_V02_REFERENCE_EXCEPTIONS: dict[date, tuple[int, str, int, bool]] = {
+    date(2012, 1, 1): (3, "SNPP", int(QualityFlagBits.VIIRS_PARCIAL), True),
+    date(2012, 3, 1): (
+        3,
+        "SNPP",
+        int(QualityFlagBits.REF_INCOMPLETA_HUECOS | QualityFlagBits.REF_INCOMPLETA_CAIDAS),
+        True,
+    ),
+    date(2023, 7, 1): (5, "N21 (respaldo de N20)", int(QualityFlagBits.REFERENCIA_RESPALDO), False),
+    date(2026, 7, 1): (4, "N20", int(QualityFlagBits.ULTIMO_MES_STANDARD), False),
+    date(2026, 8, 1): (
+        2,
+        "Aqua (solo MODIS / deriva)",
+        int(QualityFlagBits.ULTIMO_MES_STANDARD | QualityFlagBits.SOLO_MODIS_DERIVA),
+        True,
+    ),
+}
+
+
+def get_v02_reference_plan(
+    start_month: date = SERIES_START_MONTH,
+    end_month: date = SERIES_END_MONTH,
+) -> list[dict[str, Any]]:
+    """
+    Returns the static `harmonized.reference_plan` table rows (176 months for 2012-01..2026-08)
+    matching `docs/CONTRATO_DATOS_WEB_RESPUESTA_V02.md` Sec 8.3.
+    """
+    plan: list[dict[str, Any]] = []
+    for m_dt in iter_calendar_months(start_month, end_month):
+        if m_dt in _V02_REFERENCE_EXCEPTIONS:
+            ref_sat, sensors, q_flag, excluded = _V02_REFERENCE_EXCEPTIONS[m_dt]
+        elif m_dt < date(2020, 1, 1):
+            ref_sat, sensors, q_flag, excluded = 3, "SNPP", 0, False
+        else:
+            ref_sat, sensors, q_flag, excluded = 4, "N20", 0, False
+
+        plan.append(
+            {
+                "month": m_dt,
+                "ref_sat": ref_sat,
+                "sensors": sensors,
+                "quality_flag": q_flag,
+                "excluded_from_baseline": excluded,
+            }
+        )
+    return plan
+
+
+def get_v02_reference_quality_map(
+    start_month: date = SERIES_START_MONTH,
+    end_month: date = SERIES_END_MONTH,
+) -> dict[date, int]:
+    """Returns `{month: quality_flag}` from `reference_plan` so zero-fire months keep month flags."""
+    return {
+        row["month"]: row["quality_flag"]
+        for row in get_v02_reference_plan(start_month, end_month)
+    }
 
 
 # =====================================================================

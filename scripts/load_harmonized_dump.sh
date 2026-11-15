@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Post-Delivery Loader for Teammates' `harmonized_web.dump` (PostgreSQL 18)
-# Follows Section 5 of docs/DOCUMENTACION_TABLA_ARMONIZADA.md
+# Post-Delivery Loader for Teammates' `wildfire-armonizado.dump` (PostgreSQL 18)
+# Aligned with docs/CONTRATO_DATOS_WEB_RESPUESTA_V02.md (Sections 7 & 8)
 #
 # Usage:
-#   DUMP_FILE=./harmonized_web.dump ./scripts/load_harmonized_dump.sh
-# Optional env vars: PGHOST, PGPORT, PGUSER, PGDATABASE, READONLY_USER
+#   DUMP_FILE=./wildfire-armonizado.dump READONLY_PASS=secret ./scripts/load_harmonized_dump.sh
+# Optional env vars: PGHOST, PGPORT, PGUSER, PGDATABASE, READONLY_USER, READONLY_PASS
 # ==============================================================================
 set -euo pipefail
 
@@ -14,10 +14,11 @@ PGHOST="${PGHOST:-localhost}"
 PGPORT="${PGPORT:-5432}"
 PGUSER="${PGUSER:-postgres}"
 PGDATABASE="${PGDATABASE:-hotspots_db}"
-READONLY_USER="${READONLY_USER:-web_readonly}"
+READONLY_USER="${READONLY_USER:-wildfire_web}"
+READONLY_PASS="${READONLY_PASS:-wildfire_web_readonly_change_me}"
 
 if [[ -z "${DUMP_FILE}" || ! -f "${DUMP_FILE}" ]]; then
-  echo "ERROR: Set DUMP_FILE to a valid .dump file path (e.g. DUMP_FILE=./harmonized_web.dump)." >&2
+  echo "ERROR: Set DUMP_FILE to a valid .dump file path (e.g. DUMP_FILE=./wildfire-armonizado.dump)." >&2
   exit 1
 fi
 
@@ -35,46 +36,51 @@ SELECT
   COUNT(*)        AS row_count,
   MIN(month)      AS min_month,
   MAX(month)      AS max_month,
-  SUM(n_eq)       AS sum_n_eq,
-  SUM(f_eq)       AS sum_f_eq,
+  SUM(n_eq::float8) AS sum_n_eq,
+  SUM(f_eq::float8) AS sum_f_eq,
   array_agg(DISTINCT method_version) AS method_versions
 FROM harmonized.cell_month;
 "
 
-echo "[4/5] Ensuring index on (cell_id, month), running CLUSTER + ANALYZE..."
+echo "[4/5] Verifying index on (cell_id, month), running VACUUM ANALYZE..."
 psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${PGDATABASE}" -c "
 DO \$\$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_indexes
     WHERE schemaname = 'harmonized' AND tablename = 'cell_month'
-      AND indexdef LIKE '%(cell_id, month)%'
+      AND (indexdef LIKE '%(cell_id, month)%' OR indexdef LIKE '%(cell_id,month)%')
   ) THEN
     CREATE INDEX idx_cell_month_cell_month ON harmonized.cell_month (cell_id, month);
   END IF;
 END \$\$;
+VACUUM ANALYZE harmonized.cell_month;
+VACUUM ANALYZE harmonized.map_month;
+VACUUM ANALYZE harmonized.reference_plan;
 "
-IDX_NAME=$(psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${PGDATABASE}" -tAc "
-SELECT indexname FROM pg_indexes
-WHERE schemaname = 'harmonized' AND tablename = 'cell_month'
-  AND indexdef LIKE '%(cell_id, month)%'
-LIMIT 1;
-")
-if [[ -n "${IDX_NAME}" ]]; then
-  psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${PGDATABASE}" \
-    -c "CLUSTER harmonized.cell_month USING ${IDX_NAME}; ANALYZE harmonized.cell_month;"
-fi
 
-echo "[5/5] Granting read-only SELECT privileges on schema harmonized to ${READONLY_USER}..."
+echo "[5/5] Configuring hardened read-only role ${READONLY_USER} (Sec 7)..."
 psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${PGDATABASE}" -c "
 DO \$\$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${READONLY_USER}') THEN
-    CREATE ROLE ${READONLY_USER} NOLOGIN;
+    CREATE ROLE ${READONLY_USER} LOGIN PASSWORD '${READONLY_PASS}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT CONNECTION LIMIT 20;
   END IF;
 END \$\$;
+REVOKE ALL ON DATABASE \"${PGDATABASE}\" FROM PUBLIC;
+GRANT CONNECT ON DATABASE \"${PGDATABASE}\" TO ${READONLY_USER};
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA harmonized TO ${READONLY_USER};
 GRANT SELECT ON ALL TABLES IN SCHEMA harmonized TO ${READONLY_USER};
+ALTER DEFAULT PRIVILEGES IN SCHEMA harmonized GRANT SELECT ON TABLES TO ${READONLY_USER};
+
+ALTER ROLE ${READONLY_USER} SET default_transaction_read_only = on;
+ALTER ROLE ${READONLY_USER} SET search_path = harmonized, public;
+ALTER ROLE ${READONLY_USER} SET statement_timeout = '5s';
+ALTER ROLE ${READONLY_USER} SET idle_in_transaction_session_timeout = '30s';
+ALTER ROLE ${READONLY_USER} SET lock_timeout = '2s';
+ALTER ROLE ${READONLY_USER} SET work_mem = '64MB';
+ALTER ROLE ${READONLY_USER} SET jit = off;
 "
 
-echo "Done. Inspect \\d+ harmonized.cell_month and update PENDING_TEAM_CONFIRMATION in backend/harmonized_cell_month.py."
+echo "Done. Backend ready for read-only v0.2 harmonized queries."

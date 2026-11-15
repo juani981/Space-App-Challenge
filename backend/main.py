@@ -1,11 +1,12 @@
 from typing import Literal, Optional
-from fastapi import FastAPI, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from stubs.team_data_stub import get_hotspot_dataset
 from harmonization import export_hotspots_csv, apply_harmonization
 from team_contract import parse_team_record
-from cell_month_service import export_cell_month_csv, query_cell_month_aoi
+from cell_month_service import prepare_cell_month_csv_stream, query_cell_month_aoi
 
 app = FastAPI(
     title="Harmonized Hotspots API — NASA Space Apps Challenge 2026",
@@ -149,22 +150,28 @@ def export_cell_month_aoi_csv(
     end_date: Optional[str] = Query(None, description="End month/date (YYYY-MM or YYYY-MM-DD)"),
 ):
     """
-    Exports `harmonized.cell_month` monthly rows inside the AOI and date range (Option 1 of
-    DOCUMENTACION_TABLA_ARMONIZADA.md), preserving provenance, quality flags, and method_version.
+    Streams `harmonized.cell_month` monthly rows inside the AOI and date range (Option 1:
+    0.25° center-of-cell selection), enforcing the 1,000,000-row safety cap.
     """
-    dataset = query_cell_month_aoi(
-        min_lon=min_lon,
-        min_lat=min_lat,
-        max_lon=max_lon,
-        max_lat=max_lat,
-        start_date=start_date,
-        end_date=end_date,
-    )
-    csv_content = export_cell_month_csv(dataset["window_rows"])
-    filename = f"harmonized_cell_month_{dataset['start_date']}_{dataset['end_date']}.csv"
+    try:
+        win_start, win_end, row_count, csv_stream = prepare_cell_month_csv_stream(
+            min_lon=min_lon,
+            min_lat=min_lat,
+            max_lon=max_lon,
+            max_lat=max_lat,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
 
-    return Response(
-        content=csv_content,
+    filename = f"harmonized_cell_month_{win_start.isoformat()}_{win_end.isoformat()}.csv"
+    return StreamingResponse(
+        csv_stream,
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Export-Row-Count": str(row_count),
+            "X-Cell-Selection-Policy": "0.25deg cell center inside AOI",
+        },
     )
