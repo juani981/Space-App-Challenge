@@ -2,6 +2,7 @@ import csv
 import io
 import unittest
 from datetime import date
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -343,6 +344,26 @@ class TestHarmonizedCellMonthEngine(unittest.TestCase):
         self.assertTrue(mar24.anomaly_available)
         self.assertEqual(mar24.baseline_years_count, 14)
         self.assertTrue(mar24.is_series_record)
+
+    def test_v02_random_seed_sql_artifact(self):
+        """Verifies docker/postgres/04_harmonized_cell_month_seed.sql exists and seeds all v0.2 tables."""
+        seed_path = Path(__file__).resolve().parent.parent / "docker" / "postgres" / "04_harmonized_cell_month_seed.sql"
+        self.assertTrue(seed_path.exists(), f"Missing generated seed SQL at {seed_path}")
+        content = seed_path.read_text(encoding="utf-8")
+        for required_stmt in (
+            "INSERT INTO harmonized.dim_satellite",
+            "INSERT INTO harmonized.known_gap",
+            "INSERT INTO harmonized.dataset_metadata",
+            "INSERT INTO harmonized.cell_month",
+            "INSERT INTO harmonized.map_month",
+            "INSERT INTO harmonized.global_month",
+            "INSERT INTO harmonized.sat_month_quality",
+            "'Aqua (solo MODIS / deriva)'",
+            "'N21 (respaldo de N20)'",
+            "COMMIT;",
+        ):
+            self.assertIn(required_stmt, content)
+        self.assertGreater(content.count("('20"), 2000)
 
 
 if __name__ == "__main__":
