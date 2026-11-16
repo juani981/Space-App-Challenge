@@ -11,11 +11,14 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Solo en la máquina local (no expuesto a la red). Cambiá POSTGRES_PORT si 5432 ya está en uso.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_18_data:/var/lib/postgresql
       - ./docker/postgres/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./docker/postgres/02_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+      - ./docker/postgres/03_harmonized_cell_month_schema.sql:/docker-entrypoint-initdb.d/03_harmonized_cell_month_schema.sql:ro
+      - ./docker/postgres/04_harmonized_cell_month_seed.sql:/docker-entrypoint-initdb.d/04_harmonized_cell_month_seed.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d hotspots_db"]
       interval: 5s
@@ -37,14 +40,18 @@ services:
       PORT: 8000
       PYTHONUNBUFFERED: "1"
       DATA_SOURCE_MODE: ${DATA_SOURCE_MODE:-database}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-hotspots_db}
+      CELL_MONTH_USE_CELL_ID_RANGES: ${CELL_MONTH_USE_CELL_ID_RANGES:-true}
+      # Con el .dump cargado, el backend usa el rol de solo lectura (BACKEND_DATABASE_URL en .env,
+      # creado por scripts/load_harmonized_dump.sh). Sin esa variable usa el superusuario (solo desarrollo).
+      DATABASE_URL: ${BACKEND_DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-hotspots_db}}
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      # /api/health verifica la conexión real y que harmonized.cell_month tenga filas
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -70,7 +77,7 @@ services:
       - hotspots_net
 
 volumes:
-  postgres_data:
+  postgres_18_data:
     driver: local
 
 networks:

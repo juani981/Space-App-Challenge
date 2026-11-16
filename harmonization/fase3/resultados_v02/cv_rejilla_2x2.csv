@@ -1,0 +1,5 @@
+modelo,meses evaluados,celdas-mes,sesgo_%,"error celda 0,25° %",error bloque 1° %,error banda×mes %,sesgo por año (mín…máx) %
+v0.1,regla v0.1 (faltante+caída < 5),5192883,0.1,45.12,30.53,10.2,-2.91 … +4.82
+v0.2,regla v0.1 (faltante+caída < 5),5192883,0.16,43.64,28.48,8.77,-3.73 … +6.15
+v0.1,regla v0.2 (afectados < 3),5045400,0.11,44.59,29.92,9.47,-2.38 … +2.15
+v0.2,regla v0.2 (afectados < 3),5045400,0.16,43.13,27.88,8.15,-1.18 … +1.98

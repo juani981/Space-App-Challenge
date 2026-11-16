@@ -14,3 +14,8 @@ node_modules/
 dist/
 *.tsbuildinfo
 .DS_Store
+
+# Variables de entorno locales (contraseñas): nunca se suben
+.env
+.env.*
+!.env.example

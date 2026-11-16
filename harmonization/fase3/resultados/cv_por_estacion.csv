@@ -1,0 +1,5 @@
+season,focos_aqua,conteo_sesgo_%,conteo_error_rel_banda_mes_%,conteo_error_rel_celda_%,frp_sesgo_%,frp_error_rel_banda_mes_%
+1,5305510,0.23,8.48,41.61,0.27,7.44
+2,4670939,0.02,12.14,59.05,-0.05,9.31
+3,8264399,0.0,9.34,38.15,0.01,7.53
+4,6013932,0.19,11.4,46.97,-0.02,9.36

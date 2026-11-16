@@ -29,7 +29,7 @@ En la práctica operativa e industrial, el parque de sensores se divide en **cua
 ```mermaid
 flowchart LR
     subgraph Era_MODIS["Era MODIS (Resolución Nominal 1000 m — Área Nadir ~1.0 km²)"]
-        G1["G1: MODIS Terra (T) y Aqua (A)<br/>2000–2026 (Resolución 1000 m)<br/>Cruces: ~10:30 / 13:30 / 22:30 / 01:30 LT"]
+        G1["G1: MODIS Terra (T) y Aqua (A)<br/>2012–2026 (Resolución 1000 m)<br/>Cruces: ~10:30 / 13:30 / 22:30 / 01:30 LT"]
     end
 
     subgraph Era_VIIRS["Era VIIRS (Banda-M 750 m / Banda-I 375 m — Área Nadir 0.56 a 0.14 km²)"]
@@ -52,7 +52,7 @@ flowchart LR
    * Entre 2000 y mediados de 2002 solo operaba **Terra** (pasada matutina ~10:30 LT, cuando la humedad relativa es más alta y la actividad convectiva del fuego es menor).
    * En julio de 2002 se suma **Aqua** (~13:30 LT, pico de insolación y viento diurno).
    * En enero de 2012 entra **Suomi-NPP** (~13:30 LT), en 2018 entra **NOAA-20** (operando a ~50 minutos de S-NPP), y en 2023 entra **NOAA-21** (intercalado entre ambos).
-   * **Consecuencia estadística:** Si un analista suma de manera ingenua (`COUNT(*)`) las filas crudas de NASA FIRMS entre 2001 y 2026, observará un **salto artificial de $4\times$ a $12\times$ después de 2012 y 2018** que no responde a un cambio real en el régimen ecológico del fuego, sino al aumento de resolución espacial (375 m) y a la triple pasada vespertina de la constelación Joint Polar Satellite System (JPSS).
+   * **Consecuencia estadística:** Si un analista suma de manera ingenua (`COUNT(*)`) las filas crudas de NASA FIRMS entre 2012 y 2026, observará un **salto artificial de $4\times$ a $12\times$ entre MODIS y VIIRS, con nuevos escalones en 2018 y 2023** que no responde a un cambio real en el régimen ecológico del fuego, sino al aumento de resolución espacial (375 m) y a la triple pasada vespertina de la constelación Joint Polar Satellite System (JPSS).
 
 ### 2.2 Las 3 Soluciones Aplicadas en la Industria
 
@@ -67,7 +67,7 @@ Los sistemas en producción abordan esta superposición separando claramente la 
 2. **Enfoque INPE BDQueimadas (Estandarización por Satélite de Referencia vs. Modo Todos los Satélites):**
    * El INPE separa explícitamente dos modos de consulta en su plataforma:
      * **Modo Alerta Operativa (*Todos os Satélites*):** Muestra absolutamente todas las detecciones (Terra, Aqua, S-NPP, NOAA-20, NOAA-21) para detección temprana de igniciones.
-     * **Modo Serie Histórica Homogénea (*Satélite de Referência*):** Normaliza las tasas de conteo tomando la referencia del horario vespertino (~13:30 LT) y aplicando factores de calibración cruzada entre sensores para que el calendario 2000–2026 sea estadísticamente comparable año contra año.
+     * **Modo Serie Histórica Homogénea (*Satélite de Referência*):** Normaliza las tasas de conteo tomando la referencia del horario vespertino (~13:30 LT) y aplicando factores de calibración cruzada entre sensores para que el calendario 2012–2026 sea estadísticamente comparable año contra año.
 
 3. **Enfoque GWIS / CONAE (Re-grillado Espacial, Deduplicación de Pasadas y Calibración de FRP):**
    * Para construir los **Calendarios de Actividad de Quema (*Burning Activity Calendars*)** y mapas de anomalías, las detecciones puntuales se proyectan sobre celdas espaciales (grillas regulares o hexágonos) o se ponderan por su área efectiva (`pixel_geom`), deduplicando pasadas sucesivas dentro de una ventana espacio-temporal y calibrando la **Potencia Radiativa del Fuego (FRP)** mediante emparejamiento de cuantiles (*CDF Matching*) en la ventana de solapamiento 2012–presente.
@@ -102,7 +102,7 @@ Además de los datos crudos del sensor, sistemas como **EFFIS**, **GWIS** y los 
 1. **Conteo Armonizado de Focos (`harmonized_count` / Peso de Equivalencia):** Número de focos equivalentes corregido por resolución espacial y frecuencia de pasada orbital.
 2. **FRP Calibrada Inter-Sensor (`harmonized_frp_mw`):** Potencia radiativa ajustada para eliminar el sesgo de subestimación por saturación en VIIRS 375 m o dilución de fondo en MODIS 1 km.
 3. **Persistencia / Recurrencia Térmica (`persistence_score` / Ratio Noche-Día):** Fracción de detecciones nocturnas o días consecutivos con actividad dentro de la misma celda espacial.
-4. **Anomalía Porcentual y Estandarizada ($\Delta\%$ y $Z\text{-score}$):** Desviación de la actividad del mes/período seleccionado frente a la mediana histórica (2001–2026).
+4. **Anomalía Porcentual y Estandarizada ($\Delta\%$ y $Z\text{-score}$):** Desviación de la actividad del mes/período seleccionado frente a la mediana histórica (2012–2026).
 5. **Percentil Histórico (`historical_percentile`):** Posición relativa ($P_{0}\text{–}P_{100}$) del mes/año actual frente a la distribución empírica de los últimos 25 años en ese mismo AOI.
 
 ---
@@ -118,7 +118,7 @@ En ecología del fuego y teledetección térmica (documentado extensamente por e
 * Un único año de megaincendios asociado a un evento climático extremo (por ejemplo, la sequía de La Niña 2020–2022 en el Delta del Paraná y Corrientes, Argentina, o los incendios forestales de 2017/2023 en Chile y Canadá) multiplica por $10\times$ la actividad normal.
 * Si se utiliza la **media aritmética ($\mu$)** como línea base, ese único año extremo infla artificialmente el "promedio histórico", haciendo que años subsiguientes con actividad peligrosamente alta parezcan "por debajo del promedio".
 * Por ello, la industria utiliza **estadísticos robustos no paramétricos**:
-  * **Línea Base Central:** La **Mediana Histórica Mensual ($P_{50}$)** calculada sobre la serie armonizada (2001–2026) para cada mes $m \in \{1 \dots 12\}$ dentro del AOI.
+  * **Línea Base Central:** La **Mediana Histórica Mensual ($P_{50}$)** calculada sobre la serie armonizada (2012–2026) para cada mes $m \in \{1 \dots 12\}$ dentro del AOI.
   * **Banda de Variabilidad Normal:** El rango intercuartílico ($P_{25}\text{–}P_{75}$) o la envolvente $P_{10}\text{–}P_{90}$.
   * **Umbrales de Severidad por Percentiles (*Ranking Classes* de EFFIS/GWIS):**
     * **Bajo (`low`):** Actividad $< P_{25}$ (o $< -25\%$ respecto a la mediana histórica).
@@ -128,18 +128,18 @@ En ecología del fuego y teledetección térmica (documentado extensamente por e
 
 ### 4.2 Arquitectura del *Burning Activity Calendar* (Matriz Año × Mes)
 
-El componente central requerido por el desafío de NASA Space Apps 2026 es el **Calendario Multianual de Actividad de Quema (2001–2026)**, inspirado directamente en la matriz de calor mensual de **INPE BDQueimadas** y el portal estadístico de **GWIS**:
+El componente central requerido por el desafío de NASA Space Apps 2026 es el **Calendario Multianual de Actividad de Quema (2012–2026)**, inspirado directamente en la matriz de calor mensual de **INPE BDQueimadas** y el portal estadístico de **GWIS**:
 
 ```mermaid
 flowchart TD
-    AOI["Selección Espacial en Mapa (AOI BBox)<br/>[minLon, minLat, maxLon, maxLat]"] --> Query["Consulta Espacial + Armonización MODIS/VIIRS<br/>(2001–2026)"]
-    Query --> Matrix["Agregación en Matriz Año (2001..2026) × Mes (Ene..Dic)"]
+    AOI["Selección Espacial en Mapa (AOI BBox)<br/>[minLon, minLat, maxLon, maxLat]"] --> Query["Consulta Espacial + Armonización MODIS/VIIRS<br/>(2012–2026)"]
+    Query --> Matrix["Agregación en Matriz Año (2012..2026) × Mes (Ene..Dic)"]
     Matrix --> Baseline["Cálculo de Climatología por Mes m (1..12):<br/>Mediana P50(m), P25(m), P75(m), P90(m)"]
     Baseline --> Anomaly["Cálculo por Celda (Año y, Mes m):<br/>Anomalía % = ((Valor(y,m) - P50(m)) / max(P50(m), ε)) × 100"]
     Anomaly --> Render["Renderizado del Heatmap Multianual Accesible<br/>+ Selección Interactiva de Celda/Rango"]
 ```
 
-* **Eje Vertical (Filas):** Años desde **2001 hasta 2026** (marcando visualmente la transición tecnológica de 2012 donde inicia VIIRS S-NPP y 2018 donde inicia NOAA-20, demostrando cómo la serie armonizada mantiene coherencia visual sin un corte abrupto).
+* **Eje Vertical (Filas):** Años desde **2012 hasta 2026** (primer año con datos disponibles; marcando visualmente la entrada de NOAA-20 en 2018 y de NOAA-21 en 2023, demostrando cómo la serie armonizada mantiene coherencia visual sin un corte abrupto).
 * **Eje Horizontal (Columnas):** Los 12 meses del año (`Ene` a `Dic`), lo que permite identificar de un vistazo el **desplazamiento de la ventana estacional de quema** (por ejemplo, si la temporada de incendios en Córdoba o el Amazonas se está adelantando de agosto a junio o extendiéndose hasta noviembre debido al cambio climático).
 * **Paleta de Color Accesible (Colorblind-Safe):**
   * En modo **Actividad Absoluta Armonizada**: Rampas secuenciales perceptualmente uniformes como **YlOrRd** (*Yellow-Orange-Red*, estándar ColorBrewer) o **Inferno / Viridis**, donde el color claro indica ausencia de focos y el granate/púrpura oscuro indica picos de actividad.
@@ -158,7 +158,7 @@ Al auditar las interfaces en producción de **EFFIS Seasonal Trend**, **GWIS Cou
 ### 5.2 Gráfico 2: Perfil Estacional Mensual vs. Mediana Histórica (Barras + Línea de Climatología)
 * **Uso en Industria:** Estándar en **EFFIS** y **GWIS** (*Monthly Fire Activity vs. Historical Baseline*). Muestra los 12 meses del año (`Ene`–`Dic`):
   * Las **barras** representan el conteo armonizado (o FRP acumulada) del año/período seleccionado.
-  * Una **línea continua o marcador superpuesto** muestra la **Mediana Histórica ($P_{50}$)** de ese mismo mes a lo largo de 2001–2026.
+  * Una **línea continua o marcador superpuesto** muestra la **Mediana Histórica ($P_{50}$)** de ese mismo mes a lo largo de 2012–2026.
 * **Valor Operativo:** Responde instantáneamente a la pregunta: *"¿Lo que está ocurriendo este mes de agosto en este cuadrante está dentro de lo habitual para agosto, o estamos ante una anomalía crítica?"*
 
 ### 5.3 Gráfico 3: Distribución de Intensidad Energética (Histograma de Severidad FRP)
@@ -181,5 +181,5 @@ Al auditar las interfaces en producción de **EFFIS Seasonal Trend**, **GWIS Cou
 A partir de esta evidencia industrial, nuestra aplicación web para el **NASA Space Apps Challenge 2026** logra autenticidad científica y operativa al:
 1. **Respetar estrictamente el contrato de 10 atributos canónicos (`TEAM_DATA_CONTRACT.md`)** en el inspector de puntos, asegurando compatibilidad inmediata con la tabla unificada que están construyendo los Compañeros 1 y 2.
 2. **Representar en el mapa la diferencia física real entre MODIS (1000 m) y VIIRS (375 m)** en lugar de tratarlos como puntos adimensionales idénticos, permitiendo además filtrar o auditar por generación satelital (`G1`–`G4`).
-3. **Fundamentar el *Burning Activity Calendar* (2001–2026) en la Mediana Histórica y Anomalías Porcentuales/Percentiles**, evitando el sesgo de la media aritmética ante años de megaincendios.
+3. **Fundamentar el *Burning Activity Calendar* (2012–2026) en la Mediana Histórica y Anomalías Porcentuales/Percentiles**, evitando el sesgo de la media aritmética ante años de megaincendios.
 4. **Proveer exportación CSV con un clic** que incluya tanto las mediciones físicas armonizadas como los metadatos de calibración, tal como exigen los flujos de trabajo de **NASA FIRMS**, **EFFIS** y **CONAE**.

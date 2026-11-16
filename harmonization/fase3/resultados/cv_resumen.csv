@@ -1,0 +1,13 @@
+regionalización,modo,nivel,conteo_sesgo_%,conteo_error_rel_%,conteo_r,frp_sesgo_%,frp_error_rel_%,frp_r,unidades
+banda 10°,CV,"celda 0,25°",0.101,45.119,0.903,0.038,49.596,0.848,5192883
+banda 10°,CV,bloque 1°,0.101,30.535,0.951,0.038,31.12,0.944,893748
+banda 10°,CV,banda×mes,0.101,10.201,0.992,0.038,8.34,0.995,1679
+banda 10°,en_muestra,"celda 0,25°",0.04,45.012,0.905,0.059,49.476,0.862,5192883
+banda 10°,en_muestra,bloque 1°,0.04,30.404,0.952,0.059,30.959,0.948,893748
+banda 10°,en_muestra,banda×mes,0.04,9.944,0.992,0.059,7.934,0.995,1679
+banda 10° × sector,CV,"celda 0,25°",0.161,43.64,0.914,0.086,48.895,0.857,5192883
+banda 10° × sector,CV,bloque 1°,0.161,28.485,0.958,0.086,30.041,0.949,893748
+banda 10° × sector,CV,banda×mes,0.161,8.773,0.993,0.086,7.686,0.995,1679
+banda 10° × sector,en_muestra,"celda 0,25°",0.051,43.477,0.917,0.102,48.73,0.872,5192883
+banda 10° × sector,en_muestra,bloque 1°,0.051,28.286,0.96,0.102,29.818,0.954,893748
+banda 10° × sector,en_muestra,banda×mes,0.051,8.504,0.994,0.102,7.205,0.995,1679

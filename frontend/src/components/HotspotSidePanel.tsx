@@ -1,6 +1,15 @@
 import { useState } from 'react';
-import type { AoiBounds, CalibrationMode, MonthlyCalendarCell, UnifiedHotspot } from '../services/apiClient';
+import type {
+  AoiBounds,
+  CalibrationMode,
+  CellMonthAoiResponse,
+  CellMonthMapCell,
+  CellMonthMetric,
+  MonthlyCalendarCell,
+  UnifiedHotspot,
+} from '../services/apiClient';
 import type { MapRenderMode } from './CenteredAoiMap';
+import { CellMonthPanel } from './CellMonthPanel';
 import { InteractiveCalendar } from './InteractiveCalendar';
 import {
   CANONICAL_ATTRIBUTES_CONFIG,
@@ -27,6 +36,10 @@ export interface HotspotSidePanelProps {
   onCalibrationModeChange: (mode: CalibrationMode) => void;
   onRefresh: () => void;
   isLoading?: boolean;
+  cellMonthData?: CellMonthAoiResponse | null;
+  cellMonthMetric?: CellMonthMetric;
+  selectedCell?: CellMonthMapCell | null;
+  onCellMonthMetricChange?: (metric: CellMonthMetric) => void;
 }
 
 export function HotspotSidePanel({
@@ -45,6 +58,10 @@ export function HotspotSidePanel({
   onCalibrationModeChange,
   onRefresh,
   isLoading = false,
+  cellMonthData = null,
+  cellMonthMetric = 'n_eq',
+  selectedCell = null,
+  onCellMonthMetricChange,
 }: HotspotSidePanelProps) {
   const { lang, t } = useLanguage();
   const [isAnalysisOpen, setIsAnalysisOpen] = useState<boolean>(true);
@@ -97,6 +114,27 @@ export function HotspotSidePanel({
           {t.mapControlTitle}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '12px',
+              cursor: 'pointer',
+              color: mapRenderMode === 'cell_grid' ? '#0f172a' : '#64748b',
+              fontWeight: mapRenderMode === 'cell_grid' ? 700 : 400,
+            }}
+          >
+            <input
+              type="radio"
+              name="sidePanelMapRenderMode"
+              value="cell_grid"
+              checked={mapRenderMode === 'cell_grid'}
+              onChange={() => onMapRenderModeChange('cell_grid')}
+              style={{ cursor: 'pointer' }}
+            />
+            {t.mapRadioCellGrid}
+          </label>
           <label
             style={{
               display: 'flex',
@@ -185,6 +223,18 @@ export function HotspotSidePanel({
         onCalibrationModeChange={onCalibrationModeChange}
         onRefresh={onRefresh}
         isLoading={isLoading}
+      />
+
+      {/* SECCIÓN A2: GRILLA ARMONIZADA 0.25° (harmonized.cell_month 2012-2026) */}
+      <CellMonthPanel
+        bounds={bounds}
+        data={cellMonthData}
+        metric={cellMonthMetric}
+        selectedCell={selectedCell}
+        startDate={startDate}
+        endDate={endDate}
+        onMetricChange={(m) => onCellMonthMetricChange?.(m)}
+        onDateRangeChange={onDateRangeChange}
       />
 
       {/* SECCIÓN B: INSPECCIÓN DECLARATIVA DE LOS 10 CONCEPTOS CANÓNICOS */}

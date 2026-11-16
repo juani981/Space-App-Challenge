@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Circle, CircleMarker, MapContainer, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
-import type { AoiBounds, UnifiedHotspot } from '../services/apiClient';
+import { Circle, CircleMarker, MapContainer, Rectangle, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
+import type { AoiBounds, CellMonthMapCell, CellMonthMetric, UnifiedHotspot } from '../services/apiClient';
 import {
   SATELLITE_GENERATIONS,
   getSatelliteGeneration,
@@ -8,7 +8,14 @@ import {
 } from '../utils/satelliteGenerations';
 import { useLanguage } from '../i18n/LanguageContext';
 
-export type MapRenderMode = 'harmonized' | 'footprint';
+export type MapRenderMode = 'cell_grid' | 'harmonized' | 'footprint';
+
+function getGridCellColor(ratio: number): { fill: string; stroke: string } {
+  if (ratio >= 0.75) return { fill: '#b91c1c', stroke: '#7f1d1d' };
+  if (ratio >= 0.5) return { fill: '#ef4444', stroke: '#991b1b' };
+  if (ratio >= 0.25) return { fill: '#f97316', stroke: '#c2410c' };
+  return { fill: '#facc15', stroke: '#a16207' };
+}
 
 export interface CenteredAoiMapProps {
   /** Callback fired whenever the visible map viewport changes (pan, zoom, or geolocation center) */
@@ -19,10 +26,22 @@ export interface CenteredAoiMapProps {
   selectedHotspot?: UnifiedHotspot | null;
   /** Callback fired when the user clicks a hotspot marker */
   onSelectHotspot?: (hotspot: UnifiedHotspot) => void;
-  /** Controlled render mode ('harmonized' vs 'footprint') */
+  /** Controlled render mode ('cell_grid' vs legacy 'harmonized' / 'footprint') */
   renderMode?: MapRenderMode;
   /** Callback fired when render mode changes */
   onRenderModeChange?: (mode: MapRenderMode) => void;
+  /** Active 0.25° x 0.25° harmonized cells returned by `/api/cell-month/aoi` */
+  cellMonthCells?: CellMonthMapCell[];
+  /** Active metric used to scale grid cell intensity */
+  cellMonthMetric?: CellMonthMetric;
+  /** Selected 0.25° cell_id for highlight */
+  selectedCellId?: number | null;
+  /** Callback fired when a 0.25° grid cell is clicked */
+  onSelectCell?: (cell: CellMonthMapCell) => void;
+  /** Whether the optional 0.25° grid cell overlay is visible in legacy modes */
+  showCellGrid?: boolean;
+  /** Toggle callback for the optional 0.25° grid cell overlay */
+  onToggleCellGrid?: () => void;
 }
 
 /**
@@ -222,15 +241,26 @@ export function CenteredAoiMap({
   selectedHotspot = null,
   onSelectHotspot,
   renderMode: controlledMode,
+  cellMonthCells = [],
+  cellMonthMetric = 'n_eq',
+  selectedCellId = null,
+  onSelectCell,
+  showCellGrid = true,
+  onToggleCellGrid,
 }: CenteredAoiMapProps) {
-  const { t } = useLanguage();
-  const [internalMode] = useState<MapRenderMode>('harmonized');
+  const { lang, t } = useLanguage();
+  const [internalMode] = useState<MapRenderMode>('cell_grid');
   const [visualCenter, setVisualCenter] = useState<[number, number]>([-32.0, -61.5]);
   const [locateTrigger, setLocateTrigger] = useState<number>(0);
   const [isPickingLocation, setIsPickingLocation] = useState<boolean>(false);
   const [geoHasError, setGeoHasError] = useState<boolean>(false);
 
   const activeMode = controlledMode ?? internalMode;
+
+  const maxCellValue = cellMonthCells.reduce((acc, cell) => {
+    const val = cellMonthMetric === 'n_eq' ? cell.n_eq : cell.f_eq;
+    return val > acc ? val : acc;
+  }, 0);
 
   // In footprint mode, sort by zOrder (G1 at bottom -> G4 on top)
   const orderedHotspots = activeMode === 'footprint'
@@ -276,8 +306,65 @@ export function CenteredAoiMap({
           }}
         />
 
-        {/* ASYNCHRONOUSLY LAZY-LOADED HOTSPOT RENDERING LAYER */}
-        {orderedHotspots.map((hs, idx) => {
+        {/* 0.25° / 1° HARMONIZED GRID CELLS LAYER (PRIMARY FIXED CONTRACT: NO DOTS IN 'cell_grid') */}
+        {(activeMode === 'cell_grid' || showCellGrid) &&
+          cellMonthCells.map((cell) => {
+            const val = cellMonthMetric === 'n_eq' ? cell.n_eq : cell.f_eq;
+            const ratio = maxCellValue > 0 ? val / maxCellValue : 0;
+            const palette = getGridCellColor(ratio);
+            const isCellSelected = selectedCellId === cell.cell_id;
+            const resDeg = cell.resolution_deg ?? 0.25;
+            const halfStep = resDeg / 2;
+            const is1Deg = resDeg >= 1.0;
+            return (
+              <Rectangle
+                key={`cm-cell-${resDeg}-${cell.cell_id}`}
+                bounds={[
+                  [cell.lat_center - halfStep, cell.lon_center - halfStep],
+                  [cell.lat_center + halfStep, cell.lon_center + halfStep],
+                ]}
+                interactive={!isPickingLocation}
+                eventHandlers={{
+                  click: () => {
+                    if (!isPickingLocation) onSelectCell?.(cell);
+                  },
+                }}
+                pathOptions={{
+                  color: isCellSelected ? '#0f172a' : palette.stroke,
+                  fillColor: palette.fill,
+                  fillOpacity: activeMode === 'cell_grid' ? (isCellSelected ? 0.65 : 0.46) : 0.26,
+                  weight: isCellSelected ? 2.5 : 1,
+                }}
+              >
+                <Tooltip direction="top" opacity={0.95}>
+                  <div style={{ fontSize: '11px', lineHeight: 1.35 }}>
+                    <strong>
+                      {is1Deg
+                        ? lang === 'es' ? 'Bloque 1°' : '1° Block'
+                        : lang === 'es' ? 'Celda 0,25°' : '0.25° Cell'}{' '}
+                      #{cell.cell_id}
+                    </strong>{' '}
+                    ({cell.cell_area_km2.toFixed(0)} km²
+                    {is1Deg && cell.subcell_count ? ` · ${cell.subcell_count} subceldas` : ''})<br />
+                    n_eq: <strong>{cell.n_eq}</strong> | f_eq: <strong>{cell.f_eq} MW</strong><br />
+                    {lang === 'es' ? 'Terra (propia)' : 'Terra (sep.)'}: {cell.n_terra}
+                    {cell.sensors && cell.sensors.length > 0 ? ` · ${cell.sensors.join(', ')}` : ''}
+                    {cell.quality_flags_decoded.length > 0 && (
+                      <>
+                        <br />
+                        <span style={{ color: '#b45309', fontWeight: 600 }}>
+                          {cell.quality_flags_decoded.map((f) => f.label_es).join(', ')}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </Tooltip>
+              </Rectangle>
+            );
+          })}
+
+        {/* LEGACY POINT LAYER (ONLY SHOWN IF USER EXPLICITLY SWITCHES AWAY FROM 'cell_grid') */}
+        {activeMode !== 'cell_grid' && orderedHotspots.map((hs, idx) => {
           const isSelected =
             selectedHotspot !== null &&
             selectedHotspot.lat === hs.lat &&
@@ -532,6 +619,7 @@ export function CenteredAoiMap({
               background: isPickingLocation ? '#0284c7' : '#ffffff',
               color: isPickingLocation ? '#ffffff' : '#334155',
               border: 'none',
+              borderBottom: onToggleCellGrid ? '1px solid #e2e8f0' : 'none',
               cursor: 'pointer',
               padding: 0,
               transition: 'background 0.15s ease, color 0.15s ease',
@@ -542,6 +630,35 @@ export function CenteredAoiMap({
               <circle cx="12" cy="9" r="2.5" />
             </svg>
           </button>
+
+          {/* 3. Toggle 0.25° Harmonized Grid Cell Overlay */}
+          {onToggleCellGrid && (
+            <button
+              type="button"
+              title={lang === 'es' ? 'Mostrar/ocultar grilla armonizada 0,25°' : 'Toggle 0.25° harmonized grid overlay'}
+              aria-label={lang === 'es' ? 'Grilla 0,25°' : '0.25° Grid'}
+              onClick={onToggleCellGrid}
+              style={{
+                width: '38px',
+                height: '38px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: showCellGrid ? '#ea580c' : '#ffffff',
+                color: showCellGrid ? '#ffffff' : '#334155',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+                transition: 'background 0.15s ease, color 0.15s ease',
+              }}
+            >
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="1" />
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="12" y1="3" x2="12" y2="21" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
     </div>
