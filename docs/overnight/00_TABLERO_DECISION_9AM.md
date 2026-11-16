@@ -46,7 +46,7 @@ flowchart LR
     R3["overnight/ruta-3-analitica-bi (4599a71)<br/>DynamicMetricsExplorer.tsx"] -.->|"Cherry-pick opcional:<br/>Exportación CSV dual (hotspots + summary)"| R4
 ```
 
-- **¿Con cuál empezar a las 9:00 AM?** Empieza probando **`overnight/ruta-4-hibrida-integral`**: sigue paso a paso los Baby Steps 8 al 14 acordados, tiene 10 tests unitarios automatizados en el backend, maneja el apilamiento físico en metros con `<Pane>` de Leaflet más checkboxes individuales por generación (`G1`–`G4`), tiene el calendario 2001–2026 completo (26×12) con descarga CSV y el kit analítico SVG integrado.
+- **¿Con cuál empezar a las 9:00 AM?** Empieza probando **`overnight/ruta-4-hibrida-integral`**: sigue paso a paso los Baby Steps 8 al 14 acordados, tiene 10 tests unitarios automatizados en el backend, maneja el apilamiento físico en metros con `<Pane>` de Leaflet más checkboxes individuales por generación (`G1`–`G4`), tiene el calendario completo (implementado en esa rama como 2001–2026, 26×12; el proyecto solo tiene datos 2012–2026, 15×12, a ajustar) con descarga CSV y el kit analítico SVG integrado.
 - **¿Si el jurado o el equipo de datos quiere ver la calibración matemática en vivo?** Muestra o fusiona el selector de algoritmo de **`overnight/ruta-1-armonizacion`** (`backend/harmonization.py`), que permite alternar en vivo entre *Crudo*, *Ponderado por Área* y *Deduplicado*.
 
 ---

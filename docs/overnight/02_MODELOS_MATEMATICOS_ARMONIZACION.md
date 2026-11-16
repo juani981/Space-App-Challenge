@@ -2,7 +2,7 @@
 
 > **Propuesta Técnica para el Equipo de Datos (Compañeros 1 y 2) — NASA Space Apps Challenge 2026**
 > **Desafío:** *Harmonization of MODIS and VIIRS Hot Spots* (Autora: Marina Campanucci, CONAE — Argentina)
-> **Propósito:** Proveer **3 métodos matemáticos rigurosos, explícitos y programables** para armonizar las series históricas de **MODIS (`MCD14ML` / `MODIS_NRT`, 2000–2026)** y **VIIRS (`S-NPP`, `NOAA-20`, `NOAA-21`, 2012–2026)** durante la ventana de solapamiento **2012–2026**, manteniendo un acople 100% limpio con el contrato de datos [docs/TEAM_DATA_CONTRACT.md](../TEAM_DATA_CONTRACT.md) y [backend/team_contract.py](../../backend/team_contract.py).
+> **Propósito:** Proveer **3 métodos matemáticos rigurosos, explícitos y programables** para armonizar las series históricas de **MODIS (`MCD14ML`, solo archive, 2012–2026)** y **VIIRS (`S-NPP`, `NOAA-20`, `NOAA-21`, 2012–2026)** durante la ventana de solapamiento **2012–2026**, manteniendo un acople 100% limpio con el contrato de datos [docs/TEAM_DATA_CONTRACT.md](../TEAM_DATA_CONTRACT.md) y [backend/team_contract.py](../../backend/team_contract.py).
 
 ---
 
@@ -23,7 +23,7 @@ flowchart LR
     Raw["Registros Crudos<br/>MCD14ML (MODIS) + FIRMS (VIIRS)"] --> M3["Método 3: Deduplicación Espacio-Temporal<br/>(Cilindro Δd ≤ R_eff, Δt ≤ τ y Pesos G1–G4)"]
     M3 --> M1["Método 1: Ponderación por Área de Píxel<br/>(pixel_geom: 1.0 km² vs 0.14 km² + Bow-Tie)"]
     M1 --> M2["Método 2: Calibración de FRP por Cuantiles<br/>(CDF Matching en ventana 2012–2026)"]
-    M2 --> Out["Dataset Armonizado (UnifiedHotspot)<br/>Listo para Calendario 2001–2026"]
+    M2 --> Out["Dataset Armonizado (UnifiedHotspot)<br/>Listo para Calendario 2012–2026"]
 ```
 
 ---
@@ -140,8 +140,8 @@ Cada componente conexa $C_k = \{i_1, i_2, \dots, i_m\}$ del grafo espacio-tempor
      Esto evita que un incendio visto por S-NPP, NOAA-20 y NOAA-21 con 25 minutos de diferencia triplique artificialmente sus Megavatios, al tiempo que suma correctamente los sub-píxeles de 375 m que componen un frente extenso en una misma pasada.
 
 3. **Pesos de Normalización por Esfuerzo de Muestreo Orbital y Resolución (Generaciones G1–G4):**
-   Para que las anomalías del calendario **2001–2026** sean invariantes al número de satélites en órbita y al salto de resolución en cada época histórica, alineamos las **4 Generaciones Satelitales (`G1`–`G4`)** con el catálogo arquitectónico del sistema (`satelliteGenerations.ts`):
-   * **G1 (`T`, `A` — MODIS Terra y Aqua, 2000–2026, Resolución 1000 m / Área Nadir $1.0\text{ km}^2$):** Línea base histórica de referencia ($w_{\text{G1}} = 1.00$; en 2001 previo a Aqua puede aplicarse un factor diurno $1.35$).
+   Para que las anomalías del calendario **2012–2026** sean invariantes al número de satélites en órbita y al salto de resolución en cada época histórica, alineamos las **4 Generaciones Satelitales (`G1`–`G4`)** con el catálogo arquitectónico del sistema (`satelliteGenerations.ts`):
+   * **G1 (`T`, `A` — MODIS Terra y Aqua, 2012–2026, Resolución 1000 m / Área Nadir $1.0\text{ km}^2$):** Línea base histórica de referencia ($w_{\text{G1}} = 1.00$).
    * **G2 (`N` — VIIRS Suomi-NPP, 2012–2026, Resolución 750 m Banda-M / 375 m Banda-I):** Primera transición de alta sensibilidad a las 13:30 / 01:30 LT. Peso combinado geométrico + orbital: $w_{\text{G2}} \approx 0.28\text{–}0.56$.
    * **G3 (`N20` — VIIRS NOAA-20 / JPSS-1, 2017–2026, Resolución 375 m / Área Nadir $0.14\text{ km}^2$):** Duplica el barrido vespertino/nocturno en 375 m a ~50 min de S-NPP. Peso combinado por punto individual: $w_{\text{G3}} \approx 0.18\text{–}0.24$.
    * **G4 (`N21` — VIIRS NOAA-21 / JPSS-2, 2023–2026, Resolución 375 m / Área Nadir $0.14\text{ km}^2$):** Triplica la constelación JPSS en el arco de máxima actividad convectiva. Peso combinado por punto individual: $w_{\text{G4}} \approx 0.14\text{–}0.18$.
@@ -155,7 +155,7 @@ El siguiente módulo autocontenido en Python (compatible con `pandas` / `numpy` 
 ```python
 """
 Módulo de Referencia para el Equipo de Datos (Tracks MODIS & VIIRS)
-Implementa los 3 Métodos Matemáticos de Armonización (2000–2026):
+Implementa los 3 Métodos Matemáticos de Armonización (2012–2026):
   1. Cálculo de área instantánea (bow-tie MODIS + scan*track VIIRS) y Ponderación Geométrica.
   2. Calibración de FRP mediante Emparejamiento de Cuantiles (CDF Matching + Cola Log-Pareto).
   3. Deduplicación Espacio-Temporal por Grafo Cilíndrico (Δd, Δt) y Pesos G1–G4.
@@ -215,7 +215,7 @@ def compute_geometric_weight(
     # Factor por generación orbital G1–G4 (corrección de esfuerzo de muestreo multi-satélite)
     sat = satellite.upper().strip()
     if sat in ("T", "TERRA", "A", "AQUA"):
-        w_gen = 1.00  # G1: MODIS Terra / Aqua (2000–2026, 1000m)
+        w_gen = 1.00  # G1: MODIS Terra / Aqua (2012–2026, 1000m)
     elif sat in ("N", "SNPP", "SUOMI-NPP"):
         w_gen = 0.85  # G2: VIIRS Suomi-NPP (2012–2026, 750m / 375m)
     elif sat in ("N20", "NOAA-20"):
@@ -377,7 +377,7 @@ Una ventaja arquitectónica decisiva de este enfoque es que **no rompe ni exige 
 | `"harmonization_weight"` | Factor de Armonización Sensor ($w_i$) | **Método 1 + Método 3** ($w_i^{\text{geom}} \cdot w_i^{\text{orb}} \cdot w_i^{\text{dedup}}$) | `0.214` |
 | `"calibrated_frp_mw"` | FRP Calibrada por CDF Matching (MW) | **Método 2** ($F_{\text{MODIS}}^{-1}(F_{\text{VIIRS}}(\text{FRP}_i))$) | `42.8 MW` |
 | `"cluster_persistence"` | Tamaño de Cluster / Persistencia | **Método 3** (Grafo cilíndrico $\Delta d \le R_{\text{eff}}, \Delta t \le \tau$) | `"3 pasadas co-localizadas (Persistencia Nocturna)"` |
-| `"local_anomaly_pct"` | Índice de Anomalía Estacional Local | Comparación contra Mediana Histórica $P_{50}(m)$ (2001–2026) | `"+68.4% (Elevado — P84)"` |
+| `"local_anomaly_pct"` | Índice de Anomalía Estacional Local | Comparación contra Mediana Histórica $P_{50}(m)$ (2012–2026) | `"+68.4% (Elevado — P84)"` |
 
 ---
 

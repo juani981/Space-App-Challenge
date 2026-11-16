@@ -67,7 +67,7 @@ flowchart TD
     end
 
     subgraph DATA_LAYER["Fuente de Datos"]
-        STUB["backend/stubs/team_data_stub.py<br/>(Distribuciones Estadísticas + Serie 2001-2026)"]
+        STUB["backend/stubs/team_data_stub.py<br/>(Distribuciones Estadísticas + Serie 2012-2026)"]
         DB["Base de Datos Real / DuckDB / Parquet<br/>(Entregable Compañeros 1 y 2)"]
     end
 

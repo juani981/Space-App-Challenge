@@ -26,7 +26,7 @@ SECUENCIA EXACTA DE IMPLEMENTACIÓN (BABY STEPS 8 AL 14 CON CONVENTIONAL COMMITS
   * Renderizado 100% declarativo de los 10 atributos canónicos en `HotspotSidePanel.tsx`.
 - Baby Step 9 (`feat(satelites): crear catalogo configurable de las 4 generaciones satelitales G1-G4`):
   * Catálogo configurable `frontend/src/utils/satelliteGenerations.ts`:
-    - `G1`: MODIS Terra/Aqua (`T`, `A`), 2000–2026, `1000m`, halo violeta punteado (`zOrder: 1`).
+    - `G1`: MODIS Terra/Aqua (`T`, `A`), 2012–2026, `1000m`, halo violeta punteado (`zOrder: 1`).
     - `G2`: VIIRS S-NPP (`N`), 2012–2026, `750m`, círculo azul (`zOrder: 2`).
     - `G3`: VIIRS NOAA-20 (`N20`), 2017–2026, `375m`, círculo naranja (`zOrder: 3`).
     - `G4`: VIIRS NOAA-21 (`N21`), 2023–2026, `375m`, núcleo rojo sólido (`zOrder: 4`).

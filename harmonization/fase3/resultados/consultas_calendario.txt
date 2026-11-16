@@ -1,0 +1,183 @@
+﻿SET
+SELECT 4
+      nombre      | celdas | rangos 
+------------------+--------+--------
+ chica_cordoba    |    352 |     22
+ media_2000       |   2112 |     44
+ grande_argentina |  10560 |    132
+ sudamerica       |  52992 |    276
+
+CREATE FUNCTION
+##### A. Tabla real, índice actual PK (cell_id, month) — 1ª y 2ª ejecución
+      nombre      |                                                                        x                                                                        
+------------------+-------------------------------------------------------------------------------------------------------------------------------------------------
+ chica_cordoba    |   Buffers: shared hit=43 read=375
+ chica_cordoba    |         Buffers: shared hit=40 read=375
+ chica_cordoba    |               Buffers: shared hit=40 read=375
+ chica_cordoba    |               ->  Index Scan using cell_month_pkey on cell_month m  (cost=0.45..52914.18 rows=1065414 width=18) (actual rows=839.00 loops=22)
+ chica_cordoba    |                     Index Cond: ((cell_id >= ((r.r * 1440) + 457)) AND (cell_id <= ((r.r * 1440) + 472)))
+ chica_cordoba    |                     Index Searches: 22
+ chica_cordoba    |                     Buffers: shared hit=40 read=375
+ chica_cordoba    |   Buffers: shared hit=144 read=3 dirtied=3
+ chica_cordoba    | Execution Time: 70.635 ms
+ media_2000       |   Buffers: shared hit=455 read=3403
+ media_2000       |         Buffers: shared hit=455 read=3403
+ media_2000       |               Buffers: shared hit=455 read=3403
+ media_2000       |               ->  Index Scan using cell_month_pkey on cell_month m  (cost=0.45..37111.45 rows=1065414 width=18) (actual rows=4621.18 loops=44)
+ media_2000       |                     Index Cond: ((cell_id >= ((r.r * 1440) + 456)) AND (cell_id <= ((r.r * 1440) + 503)))
+ media_2000       |                     Index Searches: 44
+ media_2000       |                     Buffers: shared hit=455 read=3403
+ media_2000       | Execution Time: 191.849 ms
+ grande_argentina |   Buffers: shared hit=4097 read=2932
+ grande_argentina |         Buffers: shared hit=4097 read=2932
+ grande_argentina |               Buffers: shared hit=4097 read=2932
+ grande_argentina |               ->  Index Scan using cell_month_pkey on cell_month m  (cost=0.45..26576.30 rows=1065414 width=18) (actual rows=2720.80 loops=132)
+ grande_argentina |                     Index Cond: ((cell_id >= ((r.r * 1440) + 426)) AND (cell_id <= ((r.r * 1440) + 505)))
+ grande_argentina |                     Index Searches: 132
+ grande_argentina |                     Buffers: shared hit=4097 read=2932
+ grande_argentina | Execution Time: 290.594 ms
+ sudamerica       |   Buffers: shared hit=7284 read=27779 written=1795
+ sudamerica       |         Buffers: shared hit=7284 read=27779 written=1795
+ sudamerica       |               Buffers: shared hit=7284 read=27779 written=1795
+ sudamerica       |               ->  Index Scan using cell_month_pkey on cell_month m  (cost=0.45..23828.00 rows=1065414 width=18) (actual rows=6789.63 loops=276)
+ sudamerica       |                     Index Cond: ((cell_id >= ((r.r * 1440) + 392)) AND (cell_id <= ((r.r * 1440) + 583)))
+ sudamerica       |                     Index Searches: 276
+ sudamerica       |                     Buffers: shared hit=7284 read=27779 written=1795
+ sudamerica       | Execution Time: 1711.430 ms
+
+      nombre      |             x              
+------------------+----------------------------
+ chica_cordoba    | Execution Time: 6.266 ms
+ media_2000       | Execution Time: 79.987 ms
+ grande_argentina | Execution Time: 123.336 ms
+ sudamerica       | Execution Time: 813.374 ms
+
+##### A. Capa de mapa de un mes (todas las celdas de ago-2024) con el índice actual
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Gather  (cost=1000.00..203490.70 rows=50134 width=14) (actual rows=63194.00 loops=1)
+   Workers Planned: 2
+   Workers Launched: 2
+   Buffers: shared hit=13453 read=134083
+   ->  Parallel Seq Scan on cell_month  (cost=0.00..197477.30 rows=20889 width=14) (actual rows=21064.67 loops=3)
+         Filter: (month = '2024-08-01'::date)
+         Rows Removed by Filter: 3175121
+         Buffers: shared hit=13453 read=134083
+ Planning Time: 0.067 ms
+ Execution Time: 3821.737 ms
+
+##### A. Serie global (suma de toda la tabla por mes)
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
+ Finalize GroupAggregate  (cost=208473.91..208526.92 rows=176 width=8) (actual rows=176.00 loops=1)
+   Group Key: month
+   Buffers: shared hit=13751 read=133801
+   ->  Gather Merge  (cost=208473.91..208523.05 rows=422 width=8) (actual rows=528.00 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=13751 read=133801
+         ->  Sort  (cost=207473.88..207474.32 rows=176 width=8) (actual rows=176.00 loops=3)
+               Sort Key: month
+               Sort Method: quicksort  Memory: 29kB
+               Buffers: shared hit=13751 read=133801
+               Worker 0:  Sort Method: quicksort  Memory: 29kB
+               Worker 1:  Sort Method: quicksort  Memory: 29kB
+               ->  Partial HashAggregate  (cost=207465.56..207467.32 rows=176 width=8) (actual rows=176.00 loops=3)
+                     Group Key: month
+                     Batches: 1  Memory Usage: 32kB
+                     Buffers: shared hit=13735 read=133801
+                     Worker 0:  Batches: 1  Memory Usage: 32kB
+                     Worker 1:  Batches: 1  Memory Usage: 32kB
+                     ->  Parallel Seq Scan on cell_month  (cost=0.00..187489.04 rows=3995304 width=8) (actual rows=3196185.67 loops=3)
+                           Buffers: shared hit=13735 read=133801
+ Planning Time: 0.077 ms
+ Execution Time: 638.035 ms
+
+##### Copia temporal de sesión para probar índices alternativos
+Timing is on.
+SELECT 9588557
+Time: 39985.701 ms (00:39.986)
+CREATE INDEX
+Time: 20920.697 ms (00:20.921)
+VACUUM
+Time: 6706.799 ms (00:06.707)
+ indice_cubriente 
+------------------
+ 370 MB
+
+Time: 1.866 ms
+Timing is off.
+##### B. Índice cubriente (cell_id, month) INCLUDE (n_eq, f_eq, quality_flag) — index-only scan
+      nombre      |                                                                     x                                                                     
+------------------+-------------------------------------------------------------------------------------------------------------------------------------------
+ chica_cordoba    |               ->  Index Only Scan using cm_cubriente on cm m  (cost=0.45..29927.62 rows=1065404 width=18) (actual rows=839.00 loops=22)
+ chica_cordoba    |                     Index Cond: ((cell_id >= ((r.r * 1440) + 457)) AND (cell_id <= ((r.r * 1440) + 472)))
+ chica_cordoba    |                     Heap Fetches: 0
+ chica_cordoba    |                     Index Searches: 22
+ chica_cordoba    |   Buffers: shared hit=19 read=2, local read=1
+ chica_cordoba    | Execution Time: 6.504 ms
+ media_2000       |               ->  Index Only Scan using cm_cubriente on cm m  (cost=0.45..25618.07 rows=1065404 width=18) (actual rows=4621.18 loops=44)
+ media_2000       |                     Index Cond: ((cell_id >= ((r.r * 1440) + 456)) AND (cell_id <= ((r.r * 1440) + 503)))
+ media_2000       |                     Heap Fetches: 0
+ media_2000       |                     Index Searches: 44
+ media_2000       | Execution Time: 63.408 ms
+ grande_argentina |               ->  Index Only Scan using cm_cubriente on cm m  (cost=0.45..22745.04 rows=1065404 width=18) (actual rows=2720.80 loops=132)
+ grande_argentina |                     Index Cond: ((cell_id >= ((r.r * 1440) + 426)) AND (cell_id <= ((r.r * 1440) + 505)))
+ grande_argentina |                     Heap Fetches: 0
+ grande_argentina |                     Index Searches: 132
+ grande_argentina | Execution Time: 115.425 ms
+ sudamerica       |               ->  Index Only Scan using cm_cubriente on cm m  (cost=0.45..21995.55 rows=1065404 width=18) (actual rows=6789.63 loops=276)
+ sudamerica       |                     Index Cond: ((cell_id >= ((r.r * 1440) + 392)) AND (cell_id <= ((r.r * 1440) + 583)))
+ sudamerica       |                     Heap Fetches: 0
+ sudamerica       |                     Index Searches: 276
+ sudamerica       | Execution Time: 608.867 ms
+
+      nombre      |             x              
+------------------+----------------------------
+ chica_cordoba    | Execution Time: 6.279 ms
+ media_2000       | Execution Time: 63.624 ms
+ grande_argentina | Execution Time: 114.260 ms
+ sudamerica       | Execution Time: 592.351 ms
+
+##### C. Índice (month, cell_id) para la capa de mapa de un mes
+Timing is on.
+CREATE INDEX
+Time: 19390.333 ms (00:19.390)
+Timing is off.
+ indice_mes 
+------------
+ 370 MB
+
+                                                 QUERY PLAN                                                  
+-------------------------------------------------------------------------------------------------------------
+ Index Only Scan using cm_mes on cm  (cost=0.43..2317.54 rows=62006 width=14) (actual rows=63194.00 loops=1)
+   Index Cond: (month = '2024-08-01'::date)
+   Heap Fetches: 0
+   Index Searches: 1
+   Buffers: local hit=5 read=314
+ Planning:
+   Buffers: shared hit=4, local read=1
+ Planning Time: 0.368 ms
+ Execution Time: 9.520 ms
+
+##### C. ¿Con (month, cell_id) el calendario de un AOI empeora? (forzando ese índice)
+DROP INDEX
+      nombre      |                                                                  x                                                                  
+------------------+-------------------------------------------------------------------------------------------------------------------------------------
+ chica_cordoba    |               ->  Index Only Scan using cm_mes on cm m  (cost=0.45..30003.68 rows=1065395 width=18) (actual rows=839.00 loops=22)
+ chica_cordoba    |                     Index Cond: ((cell_id >= ((r.r * 1440) + 457)) AND (cell_id <= ((r.r * 1440) + 472)))
+ chica_cordoba    |                     Index Searches: 7766
+ chica_cordoba    | Execution Time: 36.358 ms
+ media_2000       |               ->  Index Only Scan using cm_mes on cm m  (cost=0.45..25694.13 rows=1065395 width=18) (actual rows=4621.18 loops=44)
+ media_2000       |                     Index Cond: ((cell_id >= ((r.r * 1440) + 456)) AND (cell_id <= ((r.r * 1440) + 503)))
+ media_2000       |                     Index Searches: 15532
+ media_2000       | Execution Time: 120.431 ms
+ grande_argentina |               ->  Index Only Scan using cm_mes on cm m  (cost=0.45..22821.10 rows=1065395 width=18) (actual rows=2720.80 loops=132)
+ grande_argentina |                     Index Cond: ((cell_id >= ((r.r * 1440) + 426)) AND (cell_id <= ((r.r * 1440) + 505)))
+ grande_argentina |                     Index Searches: 38386
+ grande_argentina | Execution Time: 227.724 ms
+ sudamerica       |               ->  Index Only Scan using cm_mes on cm m  (cost=0.45..22071.61 rows=1065395 width=18) (actual rows=6789.63 loops=276)
+ sudamerica       |                     Index Cond: ((cell_id >= ((r.r * 1440) + 392)) AND (cell_id <= ((r.r * 1440) + 583)))
+ sudamerica       |                     Index Searches: 88522
+ sudamerica       | Execution Time: 975.832 ms
+

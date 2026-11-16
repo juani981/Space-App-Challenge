@@ -1,0 +1,49 @@
+=== Mar-2012, S-NPP: días con alguna señal (parcial, caída, faltante o minutos bajos) ===
+  obs_date   n_det  mediana_det  n_minutes  mediana_minutos  faltante  caida  parcial  minutos_bajos  afectado
+2012-03-10 14049.0      50707.0      218.0            398.0     False   True    False           True      True
+2012-03-24 28031.0      50707.0      174.0            415.0     False  False     True           True      True
+2012-03-25     0.0      50707.0        0.0            415.0      True  False    False           True      True
+2012-03-26 12089.0      50707.0      115.0            415.0     False   True    False           True      True
+2012-03-28 28392.0      50707.0      277.0            420.0     False  False     True          False     False
+
+=== Meses incompletos (>= 3 días afectados) por satélite, definición final ===
+satélite      month  days_affected  days_missing  days_caida  days_catalog  days_minutes_low
+    SNPP 2012-03-01              4             1           2             0                 4
+   Terra 2016-02-01             10             9           1             9                10
+    Aqua 2016-02-01              3             0           3             0                 3
+    Aqua 2020-08-01             16             0           2            16                 2
+    Aqua 2022-04-01             16            16           0            16                 0
+    SNPP 2022-07-01              5             5           0             0                 5
+    SNPP 2022-08-01             10            10           0             0                10
+   Terra 2022-10-01             14            12           1            14                13
+     N20 2023-07-01              4             4           0             0                 4
+     N21 2024-02-01              3             2           0             0                 3
+    SNPP 2024-06-01              3             3           0             0                 3
+    SNPP 2024-07-01             13            10           3             0                13
+    SNPP 2024-11-01              4             3           1             0                 4
+    SNPP 2025-07-01              3             0           3             0                 3
+    SNPP 2026-03-01              3             3           0             0                 3
+    SNPP 2026-04-01              3             3           0             0                 3
+    SNPP 2026-07-01              7             6           1             0                 7
+
+=== Plan de referencia: meses con bits distintos de solo bit 1 ===
+     month  preferred_sat  ref_sat  days_affected  days_missing  days_caida  quality_flag_mes  excluded_from_baseline                    sensors
+2012-01-01              3        3              0             0           0                 1                    True                       SNPP
+2012-03-01              3        3              4             1           2                24                    True                       SNPP
+2023-07-01              4        5              0             0           0                64                   False      N21 (respaldo de N20)
+2026-08-01              2        2              0             0           0                 6                    True Aqua (solo MODIS / deriva)
+
+=== Años de base (leave-one-out) por mes calendario ===
+month
+1     13
+2     14
+3     13
+4     14
+5     14
+6     14
+7     14
+8     13
+9     13
+10    13
+11    13
+12    13

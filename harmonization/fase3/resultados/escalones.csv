@@ -1,0 +1,6 @@
+transición,descripción,Δ ln(H/Aqua),Δ_%,z (placebo 2013–2020),nota
+2018-04,entra NOAA-20 (la serie sigue con S-NPP),0.0226,2.2831,1.207,
+2020-01,cambio de referencia S-NPP → NOAA-20,0.0137,1.3828,0.7343,
+2023-01,cambio de versión MODIS 6.03 → 61.03 (afecta a Aqua),-0.0083,-0.8229,-0.4418,Aqua derivando: Δ incluye deriva
+2012-01,VIIRS parcial (S-NPP desde el 20-ene),-1.051,-65.0426,-13.3019,comparado con enero 2013–2015
+2026-08,solo MODIS: n_eq = N_Aqua,-0.1165,-11.0011,-6.2313,salto implícito = Aqua/H de jul-2026 (deriva de Aqua)
