@@ -225,7 +225,20 @@ export async function fetchCellMonthAoi(
     signal: options?.signal,
   });
   if (!response.ok) {
-    throw new Error(`Cell-month backend error: ${response.status}`);
+    // El backend responde 503 {error, detail} si la base armonizada no está disponible
+    // (en modo `database` nunca devuelve datos sintéticos). El detalle es genérico y seguro de mostrar.
+    let detail = '';
+    try {
+      const body = await response.json();
+      detail = typeof body?.detail === 'string' ? body.detail : '';
+    } catch {
+      /* cuerpo no JSON */
+    }
+    throw new Error(
+      response.status === 503
+        ? `Base armonizada no disponible (503)${detail ? `: ${detail}` : ''}`
+        : `Error del backend (${response.status})${detail ? `: ${detail}` : ''}`,
+    );
   }
   return response.json();
 }
