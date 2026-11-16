@@ -54,10 +54,13 @@ BEGIN
     CREATE INDEX idx_cell_month_cell_month ON harmonized.cell_month (cell_id, month);
   END IF;
 END \$\$;
-VACUUM ANALYZE harmonized.cell_month;
-VACUUM ANALYZE harmonized.map_month;
-VACUUM ANALYZE harmonized.reference_plan;
 "
+# VACUUM no puede correr dentro de un bloque de transacción: un `psql -c` con varias sentencias
+# se ejecuta como una sola transacción, así que cada VACUUM va en su propio -c.
+psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${PGDATABASE}" \
+  -c "VACUUM ANALYZE harmonized.cell_month;" \
+  -c "VACUUM ANALYZE harmonized.map_month;" \
+  -c "VACUUM ANALYZE harmonized.reference_plan;"
 
 echo "[5/5] Configuring hardened read-only role ${READONLY_USER} (Sec 7)..."
 psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${PGDATABASE}" -c "
