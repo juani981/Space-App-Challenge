@@ -1,6 +1,10 @@
+import os
+from pathlib import Path
 from typing import Literal, Optional
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from stubs.team_data_stub import get_hotspot_dataset
@@ -25,6 +29,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Las respuestas de /api/cell-month/aoi pesan cientos de KB de JSON: gzip las reduce ~10x.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+# Despliegue en una sola imagen (Dockerfile de la raíz): si existe el build del frontend,
+# FastAPI lo sirve en "/" y la UI llama a /api en el mismo origen (sin CORS ni nginx).
+FRONTEND_DIST = Path(os.getenv("FRONTEND_DIST", Path(__file__).parent / "static"))
+SERVE_FRONTEND = (FRONTEND_DIST / "index.html").is_file()
 
 
 @app.exception_handler(DatabaseUnavailableError)
@@ -33,7 +44,7 @@ def database_unavailable_handler(_request, exc: DatabaseUnavailableError):
     return JSONResponse(status_code=503, content={"error": "database_unavailable", "detail": str(exc)})
 
 
-@app.get("/")
+@app.get("/api/ping" if SERVE_FRONTEND else "/")
 def health_check():
     return {"status": "ok", "service": "Harmonized Hotspots API (Ruta 1)"}
 
@@ -193,3 +204,8 @@ def export_cell_month_aoi_csv(
             "X-Cell-Selection-Policy": "0.25deg cell center inside AOI",
         },
     )
+
+
+if SERVE_FRONTEND:
+    # Montado al final: las rutas /api/* declaradas arriba tienen prioridad.
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")

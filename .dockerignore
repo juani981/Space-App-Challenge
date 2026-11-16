@@ -1,0 +1,18 @@
+# Contexto de build del Dockerfile de la raíz: solo hacen falta backend/ y frontend/
+.git
+.env
+.env.*
+**/node_modules
+**/.venv
+**/venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+frontend/dist
+**/*.tsbuildinfo
+backend/static
+docs
+harmonization
+docker
+scripts
+*.dump
