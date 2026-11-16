@@ -1,0 +1,10 @@
+# Entorno virtual y cachés locales (Windows): no deben entrar a la imagen Linux
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+# Archivos sin uso en el contenedor
+package-lock.json
+.env
+.env.*

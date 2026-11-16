@@ -1,0 +1,6 @@
+# node_modules local (binarios de Windows) y build previo: la imagen hace su propio `npm ci` y `npm run build`
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.*
