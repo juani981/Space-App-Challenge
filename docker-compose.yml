@@ -13,7 +13,7 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_18_data:/var/lib/postgresql
       - ./docker/postgres/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./docker/postgres/02_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
       - ./docker/postgres/03_harmonized_cell_month_schema.sql:/docker-entrypoint-initdb.d/03_harmonized_cell_month_schema.sql:ro
@@ -73,7 +73,7 @@ services:
       - hotspots_net
 
 volumes:
-  postgres_data:
+  postgres_18_data:
     driver: local
 
 networks:
