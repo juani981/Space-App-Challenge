@@ -383,6 +383,8 @@ def area_region_km2(ranges) -> float:
 
 Polígono: un rectángulo pasado como polígono devuelve exactamente los mismos rangos que el bbox (10.560 celdas); un triángulo de 10° × 10° devuelve 800 celdas (= área / 0,0625).
 
+**Rangos que abarcan varias filas.** Si el bbox cubre los 360° de longitud, `bbox_to_ranges` une las filas consecutivas en un solo rango; por ejemplo, el polo norte recortado da 1 rango de 40 filas. Es correcto para todo filtro `cell_id BETWEEN r.s AND r.e` (calendario, mapa, CSV), porque los `cell_id` de filas consecutivas son contiguos: en el caso del polo, la consulta por rangos y la consulta por centro de celda devolvieron las mismas 4 filas. Para el área se usa `area_region_km2()` en Python o la consulta corregida de la sección 6b, que recorren fila por fila.
+
 ## 4. Dominios y nulabilidad (`cell_month`)
 
 | Columna | Tipo | Nulos | Dominio real |
@@ -474,13 +476,28 @@ SELECT x.month, coalesce(reg.n_eq, 0) AS n_eq, coalesce(reg.f_eq, 0) AS f_eq, co
 ### 6b. `area_region_km2`
 
 ```sql
+-- Acepta cualquier rango, incluidos los que abarcan varias filas (bbox de 360° de ancho unidos por bbox_to_ranges):
+-- recorre fila por fila con generate_series y cuenta solo las columnas del rango dentro de cada fila.
 SELECT sum((6371.0 ^ 2) * radians(0.25)
-           * (sin(radians(-90 + ((r.s / 1440) + 1) * 0.25)) - sin(radians(-90 + (r.s / 1440) * 0.25)))
-           * (r.e - r.s + 1)) AS area_region_km2
-  FROM unnest($1::int[], $2::int[]) AS r(s, e);   -- requiere rangos de una sola fila (no unir filas completas)
+           * (sin(radians(-90 + (f + 1) * 0.25)) - sin(radians(-90 + f * 0.25)))
+           * (least(r.e, f * 1440 + 1439) - greatest(r.s, f * 1440) + 1)) AS area_region_km2
+  FROM unnest($1::int[], $2::int[]) AS r(s, e)
+  CROSS JOIN LATERAL generate_series(r.s / 1440, r.e / 1440) AS f;
 ```
 
-Sudamérica: 0,23 ms (1 fila; 3 buffers). Resultado igual a `area_region_km2()` en Python: 35.840.143,5 km².
+**Corrección (15-nov-2026).**
+- **Qué estaba mal:** la versión anterior de esta consulta multiplicaba el área de la **primera** fila del rango por todas sus celdas. Con un rango que abarca varias filas daba un resultado erróneo: 7.633.686,6 km² en lugar de 3.874.512,7 km² para el polo norte recortado, y 1.747.960,6 km² en lugar de 510.064.471,9 km² para el mundo entero.
+- **Dónde se resuelve:** en la consulta. `bbox_to_ranges` puede seguir uniendo filas completas en un solo rango (eso es válido y más eficiente para el calendario, el mapa y el CSV, que filtran con `cell_id BETWEEN r.s AND r.e`). El backend **no** necesita dividir los rangos por fila.
+
+| Caso | Rangos | Python `area_region_km2()` | SQL corregido | SQL anterior |
+|---|---:|---:|---:|---:|
+| Sudamérica `[-82,-56,-34,13]` | 276 | 35.840.143,5 | 35.840.143,5 | 35.840.143,5 |
+| Ecuador `[15,-5,25,5]` | 40 | 1.234.862,4 | 1.234.862,4 | 1.234.862,4 |
+| Antimeridiano `[170,60,-170,72]` | 96 | 1.204.759,7 | 1.204.759,7 | 1.204.759,7 |
+| Polo norte recortado `[-180,80,180,95]` | 1 (40 filas) | 3.874.512,7 | **3.874.512,7** | 7.633.686,6 ✗ |
+| Mundo `[-180,-90,180,90]` | 1 (720 filas) | 510.064.471,9 | **510.064.471,9** (= 4πR²) | 1.747.960,6 ✗ |
+
+Sudamérica con la consulta anterior: 0,23 ms; la corregida recorre como máximo 720 filas por rango, así que su costo es despreciable.
 
 ### 6c. Capa de mapa limitada al encuadre visible
 
@@ -646,7 +663,79 @@ def anomaly(series: dict[tuple[int, int], tuple[float, int]], target: tuple[int,
             "z_robusto": z_robusto, "razon_mediana": razon_mediana}
 ```
 
-Probado: un caso normal (percentil 0,9167, clase `>90`, z 1,33); un mes excluido evaluado contra 13 años de base; y MAD = 0 (`z_robusto = None`, `razon_mediana = None` con mediana 0).
+**Pruebas reproducibles.** Entradas y salidas exactas, obtenidas ejecutando la función de arriba, copiada del contrato. Formato de entrada: `series[(year, month)] = (x, quality_flag)`.
+
+**Prueba 1 (caso normal), objetivo `(2024, 8)`:**
+
+```json
+[
+  {"year": 2012, "month": 8, "x": 102.0, "quality_flag": 0},
+  {"year": 2013, "month": 8, "x": 90.0,  "quality_flag": 24},
+  {"year": 2014, "month": 8, "x": 104.0, "quality_flag": 0},
+  {"year": 2015, "month": 8, "x": 100.0, "quality_flag": 0},
+  {"year": 2016, "month": 8, "x": 101.0, "quality_flag": 0},
+  {"year": 2017, "month": 8, "x": 102.0, "quality_flag": 0},
+  {"year": 2018, "month": 8, "x": 103.0, "quality_flag": 0},
+  {"year": 2019, "month": 8, "x": 104.0, "quality_flag": 0},
+  {"year": 2020, "month": 8, "x": 100.0, "quality_flag": 0},
+  {"year": 2021, "month": 8, "x": 101.0, "quality_flag": 0},
+  {"year": 2022, "month": 8, "x": 102.0, "quality_flag": 0},
+  {"year": 2023, "month": 8, "x": 103.0, "quality_flag": 0},
+  {"year": 2024, "month": 8, "x": 104.0, "quality_flag": 0},
+  {"year": 2025, "month": 8, "x": 100.0, "quality_flag": 0},
+  {"year": 2026, "month": 8, "x": 200.0, "quality_flag": 6}
+]
+```
+
+Salida:
+
+```json
+{"n_base": 12, "percentil": 0.9166666666666666, "clase": ">90", "record": false, "z_robusto": 1.3295554851312064, "razon_mediana": null}
+```
+
+Cómo se llega:
+- **X = 104.**
+- **La base excluye** 2024 (es el mes evaluado), 2013 (`24 & 29 = 24`, excluido) y 2026 (`6 & 29 = 4`, excluido). Quedan **12 valores**: 102, 104, 100, 101, 102, 103, 104, 100, 101, 102, 103, 100.
+- **Percentil:** hay 10 valores menores que 104 y 2 iguales, así que (10 + 0,5 · 2) / 12 = **0,9167** → clase `>90`.
+- **Récord:** no, porque 104 no supera el máximo de la base (104).
+
+**Prueba 2 (mes excluido evaluado igual), misma serie, objetivo `(2026, 8)`:**
+
+```json
+{"n_base": 13, "percentil": 1.0, "clase": ">90", "record": true, "z_robusto": 46.221832066239436, "razon_mediana": null}
+```
+
+La base son los 13 años válidos (2012 y 2014–2025). X = 200 supera a todos: récord. El mes en sí está excluido de las bases de los demás años, pero se puede evaluar; la interfaz lo muestra con su bandera.
+
+**Prueba 3 (MAD = 0), objetivo `(2020, 1)`:**
+
+```json
+[
+  {"year": 2012, "month": 1, "x": 0.0, "quality_flag": 0},
+  {"year": 2013, "month": 1, "x": 0.0, "quality_flag": 0},
+  {"year": 2014, "month": 1, "x": 0.0, "quality_flag": 0},
+  {"year": 2015, "month": 1, "x": 0.0, "quality_flag": 0},
+  {"year": 2016, "month": 1, "x": 0.0, "quality_flag": 0},
+  {"year": 2017, "month": 1, "x": 0.0, "quality_flag": 0},
+  {"year": 2018, "month": 1, "x": 0.0, "quality_flag": 0},
+  {"year": 2019, "month": 1, "x": 0.0, "quality_flag": 0},
+  {"year": 2020, "month": 1, "x": 3.0, "quality_flag": 0},
+  {"year": 2021, "month": 1, "x": 0.0, "quality_flag": 0},
+  {"year": 2022, "month": 1, "x": 0.0, "quality_flag": 0},
+  {"year": 2023, "month": 1, "x": 0.0, "quality_flag": 0},
+  {"year": 2024, "month": 1, "x": 0.0, "quality_flag": 0},
+  {"year": 2025, "month": 1, "x": 0.0, "quality_flag": 0},
+  {"year": 2026, "month": 1, "x": 0.0, "quality_flag": 0}
+]
+```
+
+Salida:
+
+```json
+{"n_base": 14, "percentil": 1.0, "clase": ">90", "record": true, "z_robusto": null, "razon_mediana": null}
+```
+
+La base son 14 ceros, así que MAD = 0 y no hay z robusto. La mediana también es 0, por lo que la razón contra la mediana no está definida (`null`). La interfaz debe mostrar "sin actividad en la base" en lugar de un número.
 
 ## 8. Tamaños y muestras reales
 
