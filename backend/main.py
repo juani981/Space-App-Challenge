@@ -1,12 +1,17 @@
 from typing import Literal, Optional
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from stubs.team_data_stub import get_hotspot_dataset
 from harmonization import export_hotspots_csv, apply_harmonization
 from team_contract import parse_team_record
-from cell_month_service import prepare_cell_month_csv_stream, query_cell_month_aoi
+from cell_month_service import (
+    DatabaseUnavailableError,
+    database_health,
+    prepare_cell_month_csv_stream,
+    query_cell_month_aoi,
+)
 
 app = FastAPI(
     title="Harmonized Hotspots API — NASA Space Apps Challenge 2026",
@@ -22,9 +27,22 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(DatabaseUnavailableError)
+def database_unavailable_handler(_request, exc: DatabaseUnavailableError):
+    """La base armonizada no responde: 503 explícito (nunca datos sintéticos en modo `database`)."""
+    return JSONResponse(status_code=503, content={"error": "database_unavailable", "detail": str(exc)})
+
+
 @app.get("/")
 def health_check():
     return {"status": "ok", "service": "Harmonized Hotspots API (Ruta 1)"}
+
+
+@app.get("/api/health")
+def api_health():
+    """Estado de la conexión: modo de datos, versión de la tabla armonizada y filas estimadas.
+    Devuelve 503 si el modo es `database` y la base no responde o está vacía."""
+    return database_health()
 
 
 @app.get("/api/aoi")

@@ -62,6 +62,11 @@ from team_contract import DATA_SOURCE_MODE
 
 logger = logging.getLogger("backend.cell_month")
 
+
+class DatabaseUnavailableError(RuntimeError):
+    """La base armonizada no responde, no tiene el esquema o está vacía.
+    En modo `database` se propaga como HTTP 503: nunca se reemplaza por datos sintéticos."""
+
 SERIES_START_DATE = SERIES_START_MONTH
 SERIES_END_DATE = SERIES_END_MONTH
 USE_CELL_ID_RANGES = os.getenv("CELL_MONTH_USE_CELL_ID_RANGES", "true").lower() == "true"
@@ -270,15 +275,14 @@ def _query_postgres_v02_fast(
     """
     Fast aggregated PostgreSQL 18 execution following Sec 6a & 6c of
     `CONTRATO_DATOS_WEB_RESPUESTA_V02.md`: avoids fetching raw cell rows into Python.
-    Returns `None` if PostgreSQL or tables are unavailable/empty.
+    Raises `DatabaseUnavailableError` if PostgreSQL or tables are unavailable/empty.
     """
     try:
         import psycopg
-    except ImportError:
-        return None
+    except ImportError as exc:
+        raise DatabaseUnavailableError("psycopg no está instalado en el backend.") from exc
 
     starts, ends = _range_arrays(min_lon, lo_lat, max_lon, hi_lat)
-    is_single_month = win_start == win_end
 
     calendar_sql = """
     WITH ranges AS (
@@ -325,95 +329,61 @@ def _query_postgres_v02_fast(
     ORDER BY p.month ASC;
     """
 
+    # Capa de mapa (contrato v0.2, secc. 6c). Todas las variantes leen SOLO `harmonized.cell_month`:
+    # en la base real `map_month` tiene únicamente (month, cell_id, n_eq, f_eq), así que no sirve para
+    # devolver n_terra, quality_flag (bit 7 por celda) ni sensors. `cell_month` tiene las mismas columnas
+    # en el esquema provisional de Docker y en el .dump real. `LATERAL ... OFFSET 0` fuerza un Index Scan
+    # por rango sobre la PK (cell_id, month); sin él el planificador eligió un Seq Scan (4,6 s medidos).
     if resolution_deg >= GRID_STEP_1DEG:
         # 1° × 1° zoom-out dynamic aggregation (Sec 6c)
-        if is_single_month:
-            map_sql = """
-            WITH ranges AS (SELECT * FROM unnest(%s::int[], %s::int[]) AS t(s, e))
-            SELECT ((x.cell_id / 1440) / 4) * 360 + ((x.cell_id %% 1440) / 4) AS block_id,
-                   sum(x.n_eq::float8) AS n_eq,
-                   sum(x.f_eq::float8) AS f_eq,
-                   sum(x.n_terra) AS n_terra,
-                   sum(x.frp_terra::float8) AS frp_terra,
-                   bit_or(x.quality_flag)::int AS quality_flag,
-                   1 AS months_active,
-                   count(*) AS subcell_count
-            FROM ranges r
-            CROSS JOIN LATERAL (
-                SELECT m.cell_id, m.n_eq, m.f_eq, m.n_terra, m.frp_terra, m.quality_flag
-                FROM harmonized.map_month m
-                WHERE m.month = %s AND m.cell_id BETWEEN r.s AND r.e
-                OFFSET 0
-            ) x
-            GROUP BY 1
-            ORDER BY n_eq DESC;
-            """
-            map_params: list[Any] = [starts, ends, win_start]
-        else:
-            map_sql = """
-            WITH ranges AS (SELECT * FROM unnest(%s::int[], %s::int[]) AS t(s, e))
-            SELECT ((x.cell_id / 1440) / 4) * 360 + ((x.cell_id %% 1440) / 4) AS block_id,
-                   sum(x.n_eq::float8) AS n_eq,
-                   sum(x.f_eq::float8) AS f_eq,
-                   sum(x.n_terra) AS n_terra,
-                   sum(x.frp_terra::float8) AS frp_terra,
-                   bit_or(x.quality_flag)::int AS quality_flag,
-                   count(DISTINCT x.month) AS months_active,
-                   count(DISTINCT x.cell_id) AS subcell_count
-            FROM ranges r
-            CROSS JOIN LATERAL (
-                SELECT m.month, m.cell_id, m.n_eq, m.f_eq, m.n_terra, m.frp_terra, m.quality_flag
-                FROM harmonized.cell_month m
-                WHERE m.cell_id BETWEEN r.s AND r.e
-                  AND m.month BETWEEN %s AND %s
-                OFFSET 0
-            ) x
-            GROUP BY 1
-            ORDER BY n_eq DESC;
-            """
-            map_params = [starts, ends, win_start, win_end]
+        map_sql = """
+        WITH ranges AS (SELECT * FROM unnest(%s::int[], %s::int[]) AS t(s, e))
+        SELECT ((x.cell_id / 1440) / 4) * 360 + ((x.cell_id %% 1440) / 4) AS block_id,
+               sum(x.n_eq::float8) AS n_eq,
+               sum(x.f_eq::float8) AS f_eq,
+               sum(x.n_terra) AS n_terra,
+               sum(x.frp_terra::float8) AS frp_terra,
+               bit_or(x.quality_flag)::int AS quality_flag,
+               count(DISTINCT x.month) AS months_active,
+               count(DISTINCT x.cell_id) AS subcell_count,
+               array_agg(DISTINCT x.sensors ORDER BY x.sensors) AS sensors
+        FROM ranges r
+        CROSS JOIN LATERAL (
+            SELECT m.month, m.cell_id, m.n_eq, m.f_eq, m.n_terra, m.frp_terra, m.quality_flag, m.sensors
+            FROM harmonized.cell_month m
+            WHERE m.cell_id BETWEEN r.s AND r.e
+              AND m.month BETWEEN %s AND %s
+            OFFSET 0
+        ) x
+        GROUP BY 1
+        ORDER BY n_eq DESC;
+        """
     else:
         # 0.25° × 0.25° native resolution
-        if is_single_month:
-            map_sql = """
-            WITH ranges AS (SELECT * FROM unnest(%s::int[], %s::int[]) AS t(s, e))
-            SELECT x.cell_id, x.lat_center, x.lon_center, x.cell_area_km2,
-                   x.n_eq::float8, x.f_eq::float8, x.n_terra, x.frp_terra::float8,
-                   x.quality_flag::int
-            FROM ranges r
-            CROSS JOIN LATERAL (
-                SELECT m.cell_id, m.lat_center, m.lon_center, m.cell_area_km2,
-                       m.n_eq, m.f_eq, m.n_terra, m.frp_terra, m.quality_flag
-                FROM harmonized.map_month m
-                WHERE m.month = %s AND m.cell_id BETWEEN r.s AND r.e
-                OFFSET 0
-            ) x
-            ORDER BY x.n_eq DESC;
-            """
-            map_params = [starts, ends, win_start]
-        else:
-            map_sql = """
-            WITH ranges AS (SELECT * FROM unnest(%s::int[], %s::int[]) AS t(s, e))
-            SELECT x.cell_id, x.lat_center, x.lon_center, x.cell_area_km2,
-                   sum(x.n_eq::float8) AS n_eq,
-                   sum(x.f_eq::float8) AS f_eq,
-                   sum(x.n_terra) AS n_terra,
-                   sum(x.frp_terra::float8) AS frp_terra,
-                   bit_or(x.quality_flag)::int AS quality_flag,
-                   count(*) AS months_active
-            FROM ranges r
-            CROSS JOIN LATERAL (
-                SELECT m.cell_id, m.lat_center, m.lon_center, m.cell_area_km2,
-                       m.n_eq, m.f_eq, m.n_terra, m.frp_terra, m.quality_flag
-                FROM harmonized.cell_month m
-                WHERE m.cell_id BETWEEN r.s AND r.e
-                  AND m.month BETWEEN %s AND %s
-                OFFSET 0
-            ) x
-            GROUP BY x.cell_id, x.lat_center, x.lon_center, x.cell_area_km2
-            ORDER BY n_eq DESC;
-            """
-            map_params = [starts, ends, win_start, win_end]
+        map_sql = """
+        WITH ranges AS (SELECT * FROM unnest(%s::int[], %s::int[]) AS t(s, e))
+        SELECT x.cell_id, min(x.lat_center) AS lat_center, min(x.lon_center) AS lon_center,
+               min(x.cell_area_km2) AS cell_area_km2,
+               sum(x.n_eq::float8) AS n_eq,
+               sum(x.f_eq::float8) AS f_eq,
+               sum(x.n_terra) AS n_terra,
+               sum(x.frp_terra::float8) AS frp_terra,
+               bit_or(x.quality_flag)::int AS quality_flag,
+               count(*) AS months_active,
+               array_agg(DISTINCT x.sensors ORDER BY x.sensors) AS sensors
+        FROM ranges r
+        CROSS JOIN LATERAL (
+            SELECT m.cell_id, m.lat_center, m.lon_center, m.cell_area_km2,
+                   m.n_eq, m.f_eq, m.n_terra, m.frp_terra, m.quality_flag, m.sensors
+            FROM harmonized.cell_month m
+            WHERE m.cell_id BETWEEN r.s AND r.e
+              AND m.month BETWEEN %s AND %s
+            OFFSET 0
+        ) x
+        GROUP BY x.cell_id
+        ORDER BY n_eq DESC;
+        """
+    map_params: list[Any] = [starts, ends, win_start, win_end]
 
     try:
         with psycopg.connect(DATABASE_URL, connect_timeout=3) as conn:
@@ -421,7 +391,9 @@ def _query_postgres_v02_fast(
                 # Quick check that harmonized.cell_month actually has loaded rows
                 cur.execute("SELECT 1 FROM harmonized.cell_month LIMIT 1;")
                 if cur.fetchone() is None:
-                    return None
+                    raise DatabaseUnavailableError(
+                        "La tabla harmonized.cell_month está vacía: falta cargar el .dump armonizado."
+                    )
 
                 monthly_series: list[MonthlyRegionAggregate] = []
                 if include_calendar:
@@ -482,7 +454,7 @@ def _query_postgres_v02_fast(
                                 "frp_terra": round(float(row[4]), 2),
                                 "months_active": int(row[6]),
                                 "subcell_count": int(row[7]),
-                                "sensors": [],
+                                "sensors": list(row[8] or []),
                                 "quality_flag": q_flag,
                                 "quality_flags_decoded": decode_quality_flags(q_flag),
                                 "resolution_deg": GRID_STEP_1DEG,
@@ -491,7 +463,7 @@ def _query_postgres_v02_fast(
                 else:
                     for row in raw_cells:
                         q_flag = int(row[8])
-                        months_act = 1 if is_single_month else int(row[9])
+                        months_act = int(row[9])
                         cells_out.append(
                             {
                                 "cell_id": int(row[0]),
@@ -503,7 +475,7 @@ def _query_postgres_v02_fast(
                                 "n_terra": int(row[6]),
                                 "frp_terra": round(float(row[7]), 2),
                                 "months_active": months_act,
-                                "sensors": [],
+                                "sensors": list(row[10] or []),
                                 "quality_flag": q_flag,
                                 "quality_flags_decoded": decode_quality_flags(q_flag),
                                 "resolution_deg": GRID_STEP_DEG,
@@ -511,9 +483,62 @@ def _query_postgres_v02_fast(
                         )
 
                 return {"monthly_series": monthly_series, "cells": cells_out}
+    except DatabaseUnavailableError:
+        raise
     except Exception as exc:
-        logger.warning("PostgreSQL v0.2 fast query failed (%s); falling back to stub", exc)
-        return None
+        # En modo `database` NO se cae a datos sintéticos: se informa el error (HTTP 503 en la API).
+        logger.error("PostgreSQL v0.2 query failed: %s", exc)
+        raise DatabaseUnavailableError("No se pudo consultar la base armonizada. Revisá el log del backend.") from exc
+
+
+def database_health() -> dict[str, Any]:
+    """
+    Estado de la fuente de datos para `/api/health`.
+    En modo `stub` no toca la base. En modo `database` verifica conexión, que `cell_month` tenga
+    filas y lee la versión desde `dataset_metadata` (si existe; el esquema provisional de Docker
+    no la tiene). Usa solo consultas baratas (catálogo y tablas chicas).
+    """
+    if DATA_SOURCE_MODE != "database":
+        return {"status": "ok", "data_source_mode": DATA_SOURCE_MODE, "database": "no se usa (modo stub)"}
+    try:
+        import psycopg
+
+        with psycopg.connect(DATABASE_URL, connect_timeout=3) as conn:
+            has_rows = conn.execute("SELECT EXISTS (SELECT 1 FROM harmonized.cell_month)").fetchone()[0]
+            if not has_rows:
+                raise DatabaseUnavailableError(
+                    "La tabla harmonized.cell_month está vacía: falta cargar el .dump armonizado."
+                )
+            est_rows = conn.execute(
+                "SELECT reltuples::bigint FROM pg_class WHERE oid = 'harmonized.cell_month'::regclass"
+            ).fetchone()[0]
+            months = conn.execute(
+                "SELECT min(month), max(month), count(*) FROM harmonized.reference_plan"
+            ).fetchone()
+            version = None
+            if conn.execute("SELECT to_regclass('harmonized.dataset_metadata') IS NOT NULL").fetchone()[0]:
+                row = conn.execute(
+                    "SELECT value FROM harmonized.dataset_metadata WHERE key = 'method_version'"
+                ).fetchone()
+                version = row[0] if row else None
+            server = conn.execute("SHOW server_version").fetchone()[0]
+            user = conn.execute("SELECT current_user").fetchone()[0]
+    except DatabaseUnavailableError:
+        raise
+    except Exception as exc:
+        logger.error("Health check: no se pudo conectar a la base armonizada: %s", exc)
+        raise DatabaseUnavailableError("No se pudo conectar a la base armonizada. Revisá el log del backend.") from exc
+
+    return {
+        "status": "ok",
+        "data_source_mode": DATA_SOURCE_MODE,
+        "database": "conectada",
+        "db_user": user,
+        "postgres_version": server,
+        "method_version": version or "desconocida (sin dataset_metadata: ¿esquema provisional sin el .dump?)",
+        "cell_month_rows_estimate": int(est_rows),
+        "series": {"first_month": months[0].isoformat(), "last_month": months[1].isoformat(), "months": int(months[2])},
+    }
 
 
 _V02_PLAN_LOOKUP: dict[date, tuple[int, str, int]] = {
@@ -784,6 +809,7 @@ def query_cell_month_aoi(
     active_cells: list[dict[str, Any]] = []
 
     if DATA_SOURCE_MODE == "database":
+        # Sin caída a datos sintéticos: si la base falla, DatabaseUnavailableError -> HTTP 503.
         pg_result = _query_postgres_v02_fast(
             min_lon=min_lon,
             lo_lat=lo_lat,
@@ -795,12 +821,10 @@ def query_cell_month_aoi(
             include_calendar=calendar_available,
             resolution_deg=resolution_deg,
         )
-        if pg_result is not None:
-            source_used = "postgres"
-            monthly_series = pg_result["monthly_series"]
-            active_cells = pg_result["cells"]
-
-    if source_used == "stub":
+        source_used = "postgres"
+        monthly_series = pg_result["monthly_series"]
+        active_cells = pg_result["cells"]
+    else:
         all_rows = generate_stub_cell_month_rows(min_lon, lo_lat, max_lon, hi_lat)
         if calendar_available:
             all_months = iter_calendar_months(SERIES_START_DATE, SERIES_END_DATE)
@@ -908,6 +932,7 @@ def prepare_cell_month_csv_stream(
                 FROM harmonized.cell_month m
                 WHERE m.cell_id BETWEEN r.s AND r.e
                   AND m.month BETWEEN %s AND %s
+                OFFSET 0
             ) x;
             """
             copy_inner_sql = """
@@ -948,7 +973,9 @@ def prepare_cell_month_csv_stream(
         except ValueError:
             raise
         except Exception as exc:
-            logger.warning("Postgres streaming CSV probe failed (%s); falling back to stub stream", exc)
+            # Sin caída a datos sintéticos en modo `database` (HTTP 503 en la API).
+            logger.error("Postgres streaming CSV probe failed: %s", exc)
+            raise DatabaseUnavailableError("No se pudo consultar la base armonizada. Revisá el log del backend.") from exc
 
     stub_rows = generate_stub_cell_month_rows(min_lon, lo_lat, max_lon, hi_lat, win_start, win_end)
     if len(stub_rows) > CSV_MAX_ROWS:
